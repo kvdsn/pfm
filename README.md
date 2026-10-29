@@ -17,6 +17,13 @@ PFM_BACKUP_DIR=/path/to/backup-folder PYTHONPATH=backend .venv/bin/python -m pfm
 
 Then open `http://127.0.0.1:8000`.
 
+To try the app without your own bank exports, build a demo database with made-up data and start the app on it:
+
+```sh
+PYTHONPATH=backend .venv/bin/python -m pfm.demo
+PFM_HOME=data/demo PYTHONPATH=backend .venv/bin/python -m pfm
+```
+
 ### Where your data lives
 
 - **Database:** `data/finance.sqlite3`, created empty on first start. Set `PFM_HOME` to use another folder. Keep it out of cloud-synced folders: sync tools can corrupt SQLite's `-wal` and `-shm` files.
@@ -91,7 +98,7 @@ For frontend work, run the API as above and `cd frontend && npm run dev` in a se
 cd frontend && npx tsc --noEmit -p . && npm test
 ```
 
-More documentation:
+Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md). More documentation:
 
 - [Requirements](docs/REQUIREMENTS.md): how the app behaves, in more detail.
 - [Categorization rules](docs/CATEGORIZATION_RULES.md)

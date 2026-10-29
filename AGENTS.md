@@ -30,6 +30,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `safety_backup()` runs before risky endpoints.
   - `LookupError` maps to 404 and `ValueError` to 400.
 - **`core/database.py`:** schema, `connect()` (one connection per call), `initialize()` with migrations, and backups (create, list, prune, restore).
+- **`demo.py`:** `python -m pfm.demo` builds a demo database from made-up KBC exports through the normal import. Keep it working when imports, categories or forecast settings change; `tests/test_demo.py` checks it.
 - **Importing and accounts:**
   - `core/parsing.py`: KBC and Belfius CSVs, and duplicate fingerprints.
   - `core/revolut.py`: Revolut, keyed as `REVOLUT-CURRENT-EUR`.
@@ -119,7 +120,8 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - Run targeted tests for small changes, and the full suites plus the layout check before committing a feature.
   - Keep briefs and reports concise.
   - The user starts a new session per topic, so rely on this file.
-- **Committing:** when finished work passes its checks, commit to `main` and push without asking. Ask first for destructive git operations, such as a force push or rewriting history.
+- **Committing:** the owner, working in `kvdsn/pfm` itself: when finished work passes its checks, commit to `main` and push without asking. Anyone else, working in a fork: commit to a branch and open a pull request; never push to `kvdsn/pfm`'s `main`. Ask first for destructive git operations, such as a force push or rewriting history.
+- **Contributors without the owner's database** run the app on demo data instead: `python -m pfm.demo` builds `data/demo` (see CONTRIBUTING.md), and the "user's server" in this file means their own.
 
 ## Rules
 
