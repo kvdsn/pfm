@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { BalanceHistory, Forecast } from "./types";
+import type { BalanceHistory, Forecast, ForecastVsActual } from "./types";
 import { money, wholeMoney } from "./format";
 import { layoutPointLabels, monthStarts, niceTicks } from "./chartLayout";
-import { TRANSFER_SHORT_TEXT, monthsOfYear } from "./forecast";
+import { TRANSFER_SHORT_TEXT, monthsOfYear, vsMonthsOfYear } from "./forecast";
 import { useElementSize } from "./hooks";
 
 const MIN_WIDTH = 620;
@@ -13,11 +13,14 @@ const CHAR_WIDTH = 7.4;
 export function BalanceChart({
   history,
   forecast = null,
+  vsActual = null,
   year = "",
 }: {
   history: BalanceHistory | null;
   /** The entity's forecast: the months of `year` after the last actual point continue the line, dashed. */
   forecast?: Forecast | null;
+  /** The forecast compared with what happened: each month with a snapshot gets a marker at its predicted month-end balance. */
+  vsActual?: ForecastVsActual | null;
   year?: string;
 }) {
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
@@ -37,6 +40,16 @@ export function BalanceChart({
       short: month.flags.includes("transfer_short"),
     }] : [];
   });
+  // The balance each month was predicted to end with, when the forecast was made; dated at the month's end.
+  const predictions = vsMonthsOfYear(vsActual, year).flatMap((entry) => {
+    if (!entry) return [];
+    const [monthYear, monthNumber] = entry.month.split("-").map(Number);
+    return [{
+      entry, dateValue: Date.UTC(monthYear, monthNumber, 0),
+      forecast: Number(entry.balance.forecast), low: Number(entry.balance.low), high: Number(entry.balance.high),
+      actual: Number(entry.balance.actual),
+    }];
+  });
   if (!points.length && !projection.length) {
     return <p className="muted empty-state">No balance history available for this year.</p>;
   }
@@ -49,10 +62,11 @@ export function BalanceChart({
   // A year without actual points starts on its first forecast month.
   const firstForecast = new Date(projection[0]?.dateValue ?? 0);
   const minDate = points.length ? points[0].dateValue : Date.UTC(firstForecast.getUTCFullYear(), firstForecast.getUTCMonth(), 1);
-  const maxDate = projection.length ? projection[projection.length - 1].dateValue : lastActual;
+  const maxDate = Math.max(projection.length ? projection[projection.length - 1].dateValue : lastActual, ...predictions.map((point) => point.dateValue));
   const values = [
     ...points.map((point) => point.balanceValue),
     ...projection.flatMap((point) => [point.closing, point.low, point.high]),
+    ...predictions.flatMap((point) => [point.forecast, point.low, point.high]),
   ];
   const ticks = niceTicks(Math.min(...values), Math.max(...values), Math.max(3, Math.round(plotHeight / 70)));
   const minBalance = ticks[0];
@@ -146,9 +160,22 @@ export function BalanceChart({
                 </g>
               );
             })}
+            {predictions.map((point) => {
+              const label = new Date(point.dateValue).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+              const cx = x(point.dateValue);
+              const cy = y(point.forecast);
+              return (
+                <path key={point.entry.month} className="vs-marker" d={`M ${cx},${cy - 6} l 6,6 l -6,6 l -6,-6 Z`}>
+                  <title>{`${label}: actual ${money(point.actual)}, predicted ${money(point.forecast)} (${money(point.low)} – ${money(point.high)})`}</title>
+                </path>
+              );
+            })}
           </svg>
         )}
       </div>
+      {predictions.length > 0 && (
+        <p className="chart-note muted small">Diamonds: the month-end balance the forecast predicted when the forecast was made, to compare with the line.</p>
+      )}
       {projection.length > 0 && (
         <p className="chart-note muted small">
           Dashed: forecast, with its range from the backtest.

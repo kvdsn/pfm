@@ -50,6 +50,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/recurring.py`: recurring payment detection and the stored decisions.
   - `core/forecast.py`: the forecast for all entities at once, the backtest and the consulting check.
   - `core/forecast_settings.py`: settings (defaults resolved at read time), salary, day rates, days off, and the Belgian calendar.
+  - `core/forecast_history.py`: the monthly forecast snapshots (taken by `GET /api/forecast`) and the forecast-vs-reality comparison.
   - `core/planned.py`, `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
 
 **Frontend** (`frontend/src`):
@@ -63,7 +64,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `CategoryCellEditor.tsx`: the inline category autocomplete.
 - **Full pages:**
   - `TriageView.tsx`
-  - `PlanView.tsx`: the Forecast page, with `RecurringView.tsx` inside it.
+  - `PlanView.tsx`: the Forecast page, with `ForecastVsReality.tsx` and `RecurringView.tsx` inside it.
   - `RulesView.tsx`
   - `CategoriesView.tsx`
   - `AccountsView.tsx`: with `Imports.tsx`, and `Backups.tsx` below it.
@@ -90,6 +91,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - Role categories and closed categories never get a baseline.
   - Corporate tax comes only from planned items.
   - Recurring candidates are never stored. Only confirmed or ignored decisions are.
+  - Snapshots are taken once per month and never replaced. Category merge and remove repoint their lines.
 - **New tables** (budgets, forecast, recurring, reimbursements) come from `SCHEMA` with `CREATE TABLE IF NOT EXISTS`, so they need no migration backup. New columns go through `ADDED_COLUMNS` with a backfill.
 - **Card statements** replace the settlement that paid them (`replaced_by_statement_id`).
 - **Soft delete:** removed transactions get `deleted_at`. Statement totals still count them.

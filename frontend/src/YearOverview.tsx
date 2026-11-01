@@ -1,8 +1,8 @@
 import React from "react";
-import type { Budget, Category, CategorySummary, Forecast, ForecastLine, PartialSummary, SelectedCategory, Summary } from "./types";
+import type { Budget, Category, CategorySummary, Forecast, ForecastLine, ForecastVsActual, PartialSummary, SelectedCategory, Summary } from "./types";
 import { budgetStatus } from "./budgets";
 import { compactOverviewNumber, exactMoney, overviewNumber, sumMoney, wholeMoney } from "./format";
-import { balanceText, linesText, monthsOfYear, projectedCategories, tipMoney } from "./forecast";
+import { balanceText, linesText, monthsOfYear, projectedCategories, signedMoney, tipMoney, vsCategoryOf, withPace, type PacedMonth, vsMonthsOfYear, vsNote, vsTone, type Flow } from "./forecast";
 
 export function YearOverview({
   year,
@@ -15,6 +15,7 @@ export function YearOverview({
   onSelectCategory,
   onBalanceHistory,
   forecast = null,
+  vsActual = null,
   categories = [],
   today = new Date(),
 }: {
@@ -33,6 +34,8 @@ export function YearOverview({
   onBalanceHistory: () => void;
   /** The entity's forecast: the rest of the current year, and next year, show projected amounts. Null shows none. */
   forecast?: Forecast | null;
+  /** The forecast compared with what happened: each month with a snapshot shows its differences. Null shows none. */
+  vsActual?: ForecastVsActual | null;
   /** The entity's categories, to place projected lines in the income or expense group. */
   categories?: Category[];
   /** The current date, injectable for tests. */
@@ -49,11 +52,37 @@ export function YearOverview({
    * A monthly cell; a future month shows its `projected` content, or stays empty so the column widths do not change.
    * `expected` marks a current-month cell whose content adds what is still expected to what is booked: it is italic too.
    */
-  const monthCell = (index: number, content: React.ReactNode, className?: string, projected?: React.ReactNode, expected = false) => {
+  const monthCell = (
+    index: number, content: React.ReactNode, className?: string, projected?: React.ReactNode, expected = false,
+    comparison?: React.ReactNode,
+  ) => {
     const future = isFuture(index);
     const classes = [className, monthClass(index), (future && projected !== undefined) || expected ? "projected" : undefined]
       .filter(Boolean).join(" ") || undefined;
-    return <td className={classes} key={index}>{future ? projected ?? null : content}</td>;
+    return <td className={classes} key={index}>{future ? projected ?? null : content}{!future && comparison}</td>;
+  };
+  // A forecast year has no actuals to compare with.
+  const vsMonths: (PacedMonth | undefined)[] = forecastYear
+    ? Array(12).fill(undefined) : vsMonthsOfYear(vsActual, year).map((month) => withPace(month, vsActual?.pace));
+  /**
+   * The difference from the forecast in small text under a figure, such as "+48"; the tooltip has the forecast.
+   * A difference under a euro is left out. Only a complete month's miss, or spending ahead of pace, is colored.
+   */
+  const comparisonOf = (
+    month: PacedMonth | undefined,
+    figure: { forecast: string; actual: string; difference: string } | undefined,
+    flow: Flow | "balance",
+    miss: boolean,
+  ) => {
+    if (!month || !figure) return null;
+    const forecastAmount = Number(figure.forecast);
+    const actualAmount = Number(figure.actual);
+    if (forecastAmount === 0 && actualAmount === 0) return null;
+    const difference = Number(figure.difference);
+    if (Math.round(difference) === 0) return null;
+    const tone = vsTone(difference, flow, miss && month.status !== "waiting");
+    const note = `${vsNote(forecastAmount, actualAmount, month.snapshot_date, month.status === "current" ? "Expected so far" : "Forecast")}${month.status === "current" ? "\nMonth in progress: expected and actual so far" : month.status === "waiting" ? "\nWaiting for imports of the whole month" : ""}`;
+    return <span className={`year-diff ${tone}`} title={note} data-testid="year-diff">{signedMoney(difference)}</span>;
   };
   const monthForecasts = monthsOfYear(forecast, year);
   /** Per month, the projected lines per category; for the rest of the current year (its current month too), or all of a forecast year. */
@@ -297,6 +326,7 @@ export function YearOverview({
                         undefined,
                         month && projectedAmount(Number(month[flowType]), `Projected ${flowType === "income" ? "income" : "expenses"} ${tipMoney(Number(month[flowType]))}\n${linesText(lines)}`),
                         partial,
+                        comparisonOf(vsMonths[index], vsMonths[index]?.[flowType], flowType, false),
                       );
                     })}
                     {totalCell(total, groupEnd)}
@@ -351,6 +381,10 @@ export function YearOverview({
                             undefined,
                             projections[index] ? projectedAmount(added[index], linesText(lines)) : undefined,
                             partial,
+                            (() => {
+                              const entry = vsCategoryOf(vsMonths[index], item.category_id, item.name, flowType);
+                              return comparisonOf(vsMonths[index], entry, flowType, entry?.miss ?? false);
+                            })(),
                           );
                         })}
                         {totalCell(categoryTotal, yearEnd)}
@@ -417,6 +451,7 @@ export function YearOverview({
                   projected?.flags.includes("transfer_short") ? "transfer-short" : undefined,
                   projected ? projectedAmount(Number(projected.closing), balanceText(projected)) : undefined,
                   partial,
+                  comparisonOf(vsMonths[index], vsMonths[index]?.balance, "balance", vsMonths[index]?.balance?.miss ?? false),
                 );
               })}
               {hasProjection && yearEndClosing !== null ? (

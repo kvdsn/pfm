@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { YearOverview } from "./YearOverview";
-import type { Budget, Category, CategorySummary, Forecast, ForecastLine, ForecastMonth, PartialSummary, Summary } from "./types";
+import type { Budget, Category, CategorySummary, Forecast, ForecastLine, ForecastMonth, ForecastVsActual, PartialSummary, Summary, VsCategory } from "./types";
 
 afterEach(cleanup);
 
@@ -534,5 +534,122 @@ describe("YearOverview forecast", () => {
     expect(total).toHaveClass("projected");
     expect(fullText(total)).toBe("650");
     expect(container.querySelectorAll("thead th.future-month")).toHaveLength(12);
+  });
+});
+
+describe("YearOverview forecast vs reality", () => {
+  const today = new Date(2026, 2, 15);
+  const vsCategory = (id: number, name: string, flow: "income" | "expense", forecast: number, actual: number, miss: boolean): VsCategory => ({
+    category_id: id, category: name, flow, forecast: forecast.toFixed(2), actual: actual.toFixed(2),
+    difference: (actual - forecast).toFixed(2), miss, source: "baseline",
+  });
+  const figure = (forecast: number, actual: number) => ({ forecast: forecast.toFixed(2), actual: actual.toFixed(2), difference: (actual - forecast).toFixed(2) });
+  const vs = (status: "complete" | "current" = "complete"): ForecastVsActual => ({
+    account_type: "personal", today: "2026-03-15",
+    months: [
+      {
+        month: "2026-01", snapshot_date: "2026-01-02", status,
+        income: figure(1300, 1200), expense: figure(650, 700),
+        balance: { forecast: "2000.00", low: "1800.00", high: "2200.00", actual: "1500.00", difference: "-500.00", miss: true },
+        categories: [
+          vsCategory(2, "Rent", "expense", 564, 600, true),
+          vsCategory(3, "Fun", "expense", 130, 100, false),
+          vsCategory(1, "Salary", "income", 1300, 1200, true),
+          // Matched by name and flow when the id differs.
+          { ...vsCategory(99, "Gym", "expense", 15, 20, false), category_id: null },
+        ],
+      },
+    ],
+    pace: null, summary: { months_tracked: 1, typical_balance_miss: "500.00" }, misses: [],
+  });
+  const summaries = [
+    summary("2026-01", [item("Salary", "income", 1200, 1), item("Rent", "expense", 600, 2), item("Fun", "expense", 100, 3), item("Gym", "expense", 20, 8)]),
+  ];
+  const renderVs = (vsActual: ForecastVsActual | null) =>
+    render(
+      <YearOverview
+        today={today} year="2026" summaries={summaries} previousSummaries={[]} emptyCategories={[]}
+        vsActual={vsActual} selectedCategory={null} onSelectCategory={vi.fn()} onBalanceHistory={vi.fn()}
+      />,
+    );
+  const diffIn = (row: HTMLElement) => within(row).getAllByRole("cell")[0].querySelector<HTMLElement>(".year-diff");
+
+  it("shows the difference under a category's figure with the forecast, tinted by a miss", () => {
+    renderVs(vs());
+    const rent = diffIn(rowOf("Rent"))!;
+    expect(rent).toHaveTextContent(/^\+36$/);
+    // Overspending is bad.
+    expect(rent).toHaveClass("bad");
+    expect(rent.title).toContain("Forecast €564, actual €600, difference +€36");
+    expect(rent.title).toContain("Forecast made 2026-01-02");
+    // Less income than forecast is bad; a difference that is no miss stays neutral.
+    expect(diffIn(rowOf("Salary"))).toHaveClass("bad");
+    expect(diffIn(rowOf("Salary"))).toHaveTextContent(/^−100$/);
+    const fun = diffIn(rowOf("Fun"))!;
+    expect(fun).toHaveClass("neutral");
+    expect(fun).not.toHaveClass("bad");
+    expect(fun).not.toHaveClass("good");
+    // A row without an id match falls back to name and flow.
+    expect(diffIn(rowOf("Gym"))).toHaveTextContent("+5");
+  });
+
+  it("leaves out a difference under a euro", () => {
+    const data = vs();
+    data.months[0].categories[0] = vsCategory(2, "Rent", "expense", 600, 600.4, false);
+    renderVs(data);
+    expect(diffIn(rowOf("Rent"))).toBeNull();
+  });
+
+  it("colors an underspend as good and shows totals and the balance without flagging totals", () => {
+    const data = vs();
+    data.months[0].categories[0] = vsCategory(2, "Rent", "expense", 700, 600, true);
+    renderVs(data);
+    expect(diffIn(rowOf("Rent"))).toHaveClass("good");
+    const expenses = diffIn(screen.getByRole("row", { name: /Expenses total/ }))!;
+    expect(expenses).toHaveTextContent(/^\+50$/);
+    expect(expenses).toHaveClass("neutral");
+    const income = diffIn(screen.getByRole("row", { name: /Income total/ }))!;
+    expect(income).toHaveTextContent(/^−100$/);
+    expect(income).toHaveClass("neutral");
+    // The balance is below its forecast and outside the range: bad.
+    const balance = diffIn(screen.getByRole("row", { name: /Latest balance/ }))!;
+    expect(balance).toHaveTextContent(/^−500$/);
+    expect(balance).toHaveClass("bad");
+  });
+
+  it("compares the month in progress with the pace, not the whole month, and leaves its balance out", () => {
+    const data = vs("current");
+    data.pace = {
+      month: "2026-01", through: "2026-01-15", elapsed: 0.48,
+      income: { expected: "1200.00", actual: "1200.00", difference: "0.00" },
+      expense: { expected: "300.00", actual: "340.00", difference: "40.00" },
+      categories: [
+        { category_id: 2, category: "Rent", flow: "expense", expected: "282.00", actual: "320.00", difference: "38.00", ahead: true },
+        { category_id: 3, category: "Fun", flow: "expense", expected: "18.00", actual: "20.00", difference: "2.00", ahead: false },
+      ],
+    };
+    renderVs(data);
+    const rent = diffIn(rowOf("Rent"))!;
+    expect(rent).toHaveTextContent(/^\+38$/);
+    expect(rent).toHaveClass("bad");
+    expect(rent.title).toContain("Month in progress");
+    expect(diffIn(rowOf("Fun"))).toHaveClass("neutral");
+    expect(diffIn(rowOf("Salary"))).toBeNull();
+    expect(diffIn(screen.getByRole("row", { name: /Expenses total/ }))).toHaveTextContent(/^\+40$/);
+    expect(diffIn(screen.getByRole("row", { name: /Latest balance/ }))).toBeNull();
+  });
+
+  it("shows nothing for the month in progress without a pace", () => {
+    renderVs(vs("current"));
+    expect(diffIn(rowOf("Rent"))).toBeNull();
+  });
+
+  it("shows nothing for months without a comparison, or without one at all", () => {
+    const { container, unmount } = renderVs(vs());
+    expect(within(rowOf("Rent")).getAllByRole("cell")[1].querySelector(".year-diff")).toBeNull();
+    unmount();
+    const none = renderVs(null);
+    expect(none.container.querySelector(".year-diff")).toBeNull();
+    expect(container).toBeTruthy();
   });
 });

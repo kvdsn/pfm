@@ -12,6 +12,7 @@ import {
   type DayOff,
   type DayRate,
   type Forecast,
+  type ForecastVsActual,
   type ForecastRole,
   type ForecastSettings,
   type PlannedItem,
@@ -24,6 +25,7 @@ import { useSignal } from "./hooks";
 import { CorporateTaxSection } from "./CorporateTax";
 import { ReimbursementsSection } from "./Reimbursements";
 import { DirectorLoanSection } from "./DirectorLoan";
+import { ForecastVsReality } from "./ForecastVsReality";
 
 const UNCATEGORIZED = "Uncategorized";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -432,6 +434,8 @@ export function PlanView({
   accountType,
   categories,
   forecast,
+  vsActual = null,
+  onOpenRecurring = () => {},
   onChanged,
   onNotice,
   onError,
@@ -443,6 +447,10 @@ export function PlanView({
   categories: Category[];
   /** The entity's forecast, which App reloads after every change made here. */
   forecast: Forecast | null;
+  /** The forecast compared with what happened; null (the Forecast switch off, Kids, an older server) hides its panel. */
+  vsActual?: ForecastVsActual | null;
+  /** Opens a recurring item (null: only the Recurring section) from a hint of the comparison. */
+  onOpenRecurring?: (id: number | null) => void;
   onChanged: () => void;
   onNotice: (message: string) => void;
   onError: (message: string) => void;
@@ -688,6 +696,8 @@ export function PlanView({
           </>
         ) : <p className="muted small">The forecast is not available.</p>}
       </section>
+
+      {vsActual && accountType !== "kids" && <ForecastVsReality vsActual={vsActual} onOpenRecurring={onOpenRecurring} />}
 
       {recurring}
 

@@ -162,6 +162,35 @@ CREATE TABLE IF NOT EXISTS reimbursement_claims (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS forecast_snapshots (
+    id INTEGER PRIMARY KEY,
+    month TEXT NOT NULL UNIQUE,
+    taken_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS forecast_snapshot_balances (
+    snapshot_id INTEGER NOT NULL REFERENCES forecast_snapshots(id) ON DELETE CASCADE,
+    account_type TEXT NOT NULL,
+    month TEXT NOT NULL,
+    closing_cents INTEGER NOT NULL,
+    low_cents INTEGER NOT NULL,
+    high_cents INTEGER NOT NULL,
+    PRIMARY KEY(snapshot_id, account_type, month)
+);
+CREATE TABLE IF NOT EXISTS forecast_snapshot_lines (
+    id INTEGER PRIMARY KEY,
+    snapshot_id INTEGER NOT NULL REFERENCES forecast_snapshots(id) ON DELETE CASCADE,
+    account_type TEXT NOT NULL,
+    month TEXT NOT NULL,
+    category_id INTEGER NOT NULL,
+    category_name TEXT NOT NULL,
+    is_income INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    day TEXT,
+    recurring_id INTEGER REFERENCES recurring_items(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS forecast_snapshot_lines_idx
+    ON forecast_snapshot_lines(account_type, month);
 CREATE TABLE IF NOT EXISTS imports (
     id INTEGER PRIMARY KEY,
     account_id INTEGER NOT NULL REFERENCES accounts(id),

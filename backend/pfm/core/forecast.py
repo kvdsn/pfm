@@ -183,10 +183,11 @@ Lines = dict[str, dict[int, list[dict[str, Any]]]]  # entity -> month index -> p
 
 def _add(
     lines: Lines, entity: str, month: int, category_id: int, cents: int, source: str,
-    day: Optional[date], detail: str,
+    day: Optional[date], detail: str, recurring_id: Optional[int] = None,
 ) -> None:
     lines[entity].setdefault(month, []).append(
-        {"category_id": category_id, "amount": cents, "source": source, "date": day, "detail": detail}
+        {"category_id": category_id, "amount": cents, "source": source, "date": day, "detail": detail,
+         "recurring_id": recurring_id}
     )
 
 
@@ -218,6 +219,7 @@ def _recurring_lines(context: _Context, lines: Lines) -> None:
                     _add(
                         lines, entity, _index(when), item["category_id"] or data.uncategorized,
                         scheduled_cents(item["_schedule"], when), "recurring", when, item["merchant"],
+                        item["id"],
                     )
 
 

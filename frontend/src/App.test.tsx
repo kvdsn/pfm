@@ -97,6 +97,95 @@ describe("Transaction sorting", () => {
   });
 });
 
+describe("Forecast vs reality", () => {
+  const vsActual = {
+    account_type: "personal", today: "2026-12-05",
+    months: [{
+      month: "2026-02", snapshot_date: "2026-02-01", status: "complete",
+      income: { forecast: "100.00", actual: "100.00", difference: "0.00" },
+      expense: { forecast: "40.00", actual: "60.00", difference: "20.00" },
+      balance: { forecast: "500.00", low: "400.00", high: "600.00", actual: "450.00", difference: "-50.00", miss: false },
+      categories: [],
+    }],
+    pace: null, summary: { months_tracked: 1, typical_balance_miss: "50.00" },
+    misses: [{ month: "2026-02", category_id: 5, category: "Internet", flow: "expense", forecast: "30.00", actual: "40.00", difference: "10.00", hint: "amount_changed", recurring_id: 7 }],
+  };
+  const recurringItem = {
+    id: 7, status: "confirmed", merchant: "Fibre Co", kind: "Direct debit", cadence: "monthly", day_of_month: 3, category_id: 5,
+    category: "Internet", amount: "-40.00", monthly_amount: "-40.00", amounts: [{ effective_date: "2026-01-01", amount: "-40.00" }],
+    start_date: "2026-01-03", end_date: null, last_date: "2026-02-03", next_date: "2026-03-03", history: [], occurrences: 2, flags: [],
+    linked: null, note: "",
+  };
+  const requested: string[] = [];
+  beforeEach(() => {
+    requested.length = 0;
+    localStorage.removeItem("pfm.showForecast");
+    apiMock.mockImplementation(async (url: string) => {
+      requested.push(url);
+      if (url.startsWith("/api/forecast/vs-actual")) return vsActual;
+      if (url.startsWith("/api/forecast/settings")) return planSettings;
+      if (url.startsWith("/api/forecast/salary")) return [];
+      if (url.startsWith("/api/forecast?")) {
+        return {
+          account_type: "personal", today: "2026-03-10", accounts: [], opening: "500.00", year_ends: [], one_offs: [], assumptions: [],
+          backtest: { origins: 0, horizons: [], baseline: {}, recommended: {} }, months: [],
+        };
+      }
+      if (url.startsWith("/api/recurring/linkable") || url.startsWith("/api/recurring/groups")) return [];
+      if (url.startsWith("/api/recurring")) {
+        return { monthly: { income: "0.00", expense: "0.00", net: "0.00" }, items: [recurringItem], candidates: [], ignored: [] };
+      }
+      if (url.startsWith("/api/planned")) return [];
+      if (url.startsWith("/api/report")) return { months: ["2026-03"], summaries: [summary] };
+      if (url.startsWith("/api/transactions")) return { total: 0, items: [] };
+      return [];
+    });
+  });
+  afterEach(() => localStorage.removeItem("pfm.showForecast"));
+
+  it("shows the panel on the Forecast page, and its Amount changed hint opens that recurring payment", async () => {
+    await renderApp();
+    press("f");
+    const panel = await screen.findByRole("region", { name: "Forecast vs reality" });
+    expect(requested).toContain("/api/forecast/vs-actual?account_type=personal");
+    fireEvent.click(within(panel).getByRole("button", { name: "Amount changed" }));
+    const row = (await screen.findByText("Fibre Co", { selector: "strong" })).closest("tr")!;
+    await waitFor(() => expect(row).toHaveAttribute("aria-selected", "true"));
+    expect(await screen.findByRole("complementary", { name: "Recurring payment details" })).toBeInTheDocument();
+  });
+
+  it("asks for nothing and shows nothing when the Forecast switch is off", async () => {
+    localStorage.setItem("pfm.showForecast", "off");
+    await renderApp();
+    expect(requested.some((url) => url.startsWith("/api/forecast/vs-actual"))).toBe(false);
+    press("f");
+    await screen.findByRole("region", { name: "Recurring payments" });
+    expect(screen.queryByRole("region", { name: "Forecast vs reality" })).not.toBeInTheDocument();
+    expect(document.querySelector(".year-diff")).toBeNull();
+    expect(requested.some((url) => url.startsWith("/api/forecast/vs-actual"))).toBe(false);
+  });
+
+  it("never asks for Kids", async () => {
+    await renderApp();
+    press("e");
+    press("e");
+    await waitFor(() => expect(pressed("Kids")).toBe("true"));
+    await screen.findByRole("button", { name: "2026" });
+    expect(requested).not.toContain("/api/forecast/vs-actual?account_type=kids");
+  });
+
+  it("works against an older server without the endpoint", async () => {
+    apiMock.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/forecast/vs-actual")) throw new Error("Not Found");
+      if (url.startsWith("/api/report")) return { months: ["2026-03"], summaries: [summary] };
+      if (url.startsWith("/api/transactions")) return { total: 0, items: [] };
+      return [];
+    });
+    await renderApp();
+    expect(document.querySelector(".year-diff")).toBeNull();
+  });
+});
+
 describe("Global keyboard shortcuts", () => {
   it("E cycles personal, business, kids; P, L and B do nothing", async () => {
     await renderApp();

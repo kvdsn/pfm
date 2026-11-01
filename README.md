@@ -81,6 +81,7 @@ The **Forecast** page holds what the projection is based on:
 - **Corporate tax:** an estimate with advised prepayments. It is an estimate, not tax advice.
 - **Director loan** and **reimbursements** between Business and Personal.
 - **Baselines:** each other category's usual month, from the median of recent months.
+- **Forecast vs reality:** for Personal and Business, how far off the forecast was. It shows the typical month-end miss, whether this month's spending runs ahead of pace, and the biggest misses with a hint about what to adjust. The year table and graph show the same differences while the Forecast switch is on.
 
 ### Accounts and backups
 

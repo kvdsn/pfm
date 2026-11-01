@@ -303,7 +303,10 @@ export function RecurringView({
   onChanged,
   newItemSignal = 0,
   active = true,
+  openRequest = null,
 }: {
+  /** Asks to open one confirmed item (a null id only brings the list into view); a new nonce repeats the request. */
+  openRequest?: { id: number | null; nonce: number } | null;
   /** Whether the arrow keys and Enter act on the list; off while the Forecast page's other sections are in use. */
   active?: boolean;
   accountType: AccountType;
@@ -390,6 +393,22 @@ export function RecurringView({
       document.querySelector(`[data-recurring-key="${CSS.escape(key)}"]`)?.scrollIntoView?.({ block: "nearest" });
     });
   }, active);
+
+  // A request from the comparison on the Forecast page: select that confirmed item once the list has it.
+  const handledRequest = useRef(0);
+  useEffect(() => {
+    if (!openRequest || openRequest.nonce === handledRequest.current || !list) return;
+    handledRequest.current = openRequest.nonce;
+    document.getElementById("section-recurring")?.scrollIntoView?.({ block: "start" });
+    const item = openRequest.id === null ? undefined : list.items.find((entry) => entry.id === openRequest.id);
+    if (item) {
+      revealPane.current = true;
+      select(itemKey(item));
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-recurring-key="${CSS.escape(itemKey(item))}"]`)?.scrollIntoView?.({ block: "nearest" });
+      });
+    }
+  }, [openRequest, list]);
 
   /** Runs a change, reloads the list and keeps the selection on the same merchant and kind where it still exists. */
   const run = async (action: () => Promise<void>, failure: string) => {

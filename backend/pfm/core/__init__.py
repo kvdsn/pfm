@@ -35,6 +35,12 @@ from .database import (
 from .corporate_tax import apply_corporate_tax, corporate_tax
 from .director_loan import director_loan, plan_loan_interest
 from .forecast import backtest, consulting_payments, forecast
+from .forecast_history import (
+    ensure_snapshot,
+    ensure_snapshot_safely,
+    forecast_vs_actual,
+    take_snapshot,
+)
 from .forecast_settings import (
     add_day_off,
     delete_day_off,

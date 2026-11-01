@@ -185,6 +185,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .year-summary-table .category-name-static { display: block; flex: 1; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .year-amount-compact { display: none; }
 .year-zero { color: var(--muted-light); }
+/* The difference from the forecast under a figure. */
+.year-summary-table .year-diff { display: block; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; color: var(--muted); font-size: 10px; font-style: normal; font-weight: 400; line-height: 1.15; cursor: help; }
+.year-summary-table .year-diff.bad { color: var(--red); }
+.year-summary-table .year-diff.good { color: var(--green); }
 .year-summary-table td.current-month, .year-summary-table th.current-month, .year-summary-table .year-group-total td.current-month { background-image: linear-gradient(var(--current-tint), var(--current-tint)); }
 .year-summary-table thead th.current-month { color: var(--ink); font-weight: 800; }
 .year-summary-table thead th.future-month { color: var(--muted-light); }
@@ -593,6 +597,8 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
 .forecast-line { fill: none; stroke: var(--green); stroke-width: 2; stroke-dasharray: 6 5; stroke-linejoin: round; stroke-linecap: round; }
 .forecast-point { fill: var(--surface); stroke: var(--green); stroke-width: 2; }
 .forecast-point:hover { r: 5; }
+.vs-marker { fill: var(--blue); stroke: var(--surface); stroke-width: 1.5; }
+.vs-marker:hover { fill: var(--primary); }
 .forecast-shortfall { fill: var(--amber); stroke: var(--surface); stroke-width: 1; }
 .chart-note { margin: 10px 0 0; }
 .year-tabs .account-tab[title$="forecast"] { font-style: italic; }
@@ -675,3 +681,16 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
 
 /* A page holding two views one under the other, such as the accounts with the backups below. */
 .stacked-view { display: grid; gap: 16px; }
+
+/* Forecast vs reality */
+.vs-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0 0 12px; }
+.vs-tile { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--subtle); }
+.vs-tile-label { color: var(--muted); font-size: var(--text-xs); }
+.vs-tile-value { margin-top: 2px; font-size: var(--text-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
+.vs-tile-note { color: var(--muted); font-size: var(--text-xs); }
+.vs-tile-value.bad, .vs-diff.bad { color: var(--red); }
+.vs-tile-value.good, .vs-diff.good { color: var(--green); }
+.vs-pace-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+.vs-pace-list li { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--red-soft); color: var(--red); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.vs-hint-link { padding: 0; border: 0; background: transparent; color: var(--blue); font: inherit; text-decoration: underline; cursor: pointer; }
+.vs-hint-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

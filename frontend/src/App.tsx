@@ -8,6 +8,7 @@ import type {
   Category,
   FlowType,
   Forecast,
+  ForecastVsActual,
   ImportRecord,
   SelectedCategory,
   SimilarTransactions,
@@ -66,6 +67,11 @@ const fetchForecast = (accountType: AccountType) =>
   api<Forecast>(`/api/forecast?account_type=${accountType}`)
     .then((forecast) => (Array.isArray(forecast?.months) ? forecast : null), () => null);
 
+/** The forecast-versus-actual comparison of Personal or Business; null when the server has none (an older server). */
+const fetchForecastVsActual = (accountType: AccountType) =>
+  api<ForecastVsActual>(`/api/forecast/vs-actual?account_type=${accountType}`)
+    .then((vs) => (Array.isArray(vs?.months) && vs.summary ? vs : null), () => null);
+
 export function App() {
   const [accountType, setAccountType] = useState<AccountType>("personal");
   const [summaries, setSummaries] = useState<Summary[]>([]);
@@ -73,6 +79,8 @@ export function App() {
   const [months, setMonths] = useState<string[]>([]);
   /** The forecast of one entity; it only counts while that entity is the active one. */
   const [loadedForecast, setLoadedForecast] = useState<Forecast | null>(null);
+  /** The forecast-versus-actual comparison of one entity; it only counts while that entity is the active one. */
+  const [loadedVsActual, setLoadedVsActual] = useState<ForecastVsActual | null>(null);
   const [year, setYear] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   /** Budgets loaded for one entity and year; they only count while that is still the selection. */
@@ -145,6 +153,19 @@ export function App() {
   });
   // With projections off, everything renders as it does without a forecast; the Plan view keeps its own.
   const shownForecast = showForecast ? forecast : null;
+  const vsActual = showForecast && loadedVsActual?.account_type === accountType ? loadedVsActual : null;
+  // The comparison follows the forecast: computing the forecast is what saves the month's snapshot. Kids has none.
+  useEffect(() => {
+    if (!showForecast || accountType === "kids" || !loadedForecast) {
+      setLoadedVsActual(null);
+      return;
+    }
+    let current = true;
+    void fetchForecastVsActual(accountType).then((next) => { if (current) setLoadedVsActual(next); });
+    return () => { current = false; };
+  }, [accountType, showForecast, loadedForecast]);
+  /** Which recurring item the Forecast page's comparison asked to open; the nonce makes a repeated request count. */
+  const [recurringTarget, setRecurringTarget] = useState<{ id: number | null; nonce: number } | null>(null);
   const reportYears = useMemo(() => yearsOf(months), [months]);
   // Years the forecast reaches beyond the data (next year) can be shown too, as forecast years.
   const forecastYears = useMemo(() => forecastOnlyYears(shownForecast, reportYears), [shownForecast, reportYears]);
@@ -815,6 +836,8 @@ export function App() {
             accountType={accountType}
             categories={categories}
             forecast={forecast}
+            vsActual={vsActual}
+            onOpenRecurring={(id) => setRecurringTarget((target) => ({ id, nonce: (target?.nonce ?? 0) + 1 }))}
             onChanged={() => void reloadForecast()}
             onNotice={setNotice}
             onError={setError}
@@ -831,6 +854,7 @@ export function App() {
                   onChanged={() => void reloadForecast()}
                   newItemSignal={recurringSignal}
                   active={section === "recurring"}
+                  openRequest={recurringTarget}
                 />
               </div>
             )}
@@ -898,6 +922,7 @@ export function App() {
             emptyCategories={emptyCategories}
             budgets={budgets}
             forecast={shownForecast}
+            vsActual={vsActual}
             categories={categories}
             selectedCategory={selectedCategory}
             onSelectCategory={selectCategory}
@@ -1012,7 +1037,7 @@ export function App() {
           backdropClassName="balance-history-backdrop"
           onClose={() => setShowBalanceHistory(false)}
         >
-          <BalanceChart history={balanceHistory} forecast={shownForecast} year={year} />
+          <BalanceChart history={balanceHistory} forecast={shownForecast} vsActual={vsActual} year={year} />
         </Dialog>
       )}
 

@@ -512,3 +512,63 @@ export type DirectorLoan = {
   payments: DirectorLoanPayment[];
   notes: string[];
 };
+
+/** One compared figure of a month: money amounts are positive strings; `difference` is actual minus forecast. */
+export type VsFigure = { forecast: string; actual: string; difference: string };
+export type VsMonthStatus = "current" | "complete" | "waiting";
+export type VsCategory = {
+  category_id: number | null;
+  category: string;
+  flow: "income" | "expense";
+  forecast: string;
+  actual: string;
+  difference: string;
+  miss: boolean;
+  source: ForecastLine["source"] | "booked" | "none";
+};
+export type VsMonth = {
+  month: string;
+  snapshot_date: string;
+  status: VsMonthStatus;
+  income: VsFigure;
+  expense: VsFigure;
+  balance: { forecast: string; low: string; high: string; actual: string; difference: string; miss: boolean };
+  categories: VsCategory[];
+};
+export type VsHint = "amount_changed" | "one_off" | "make_recurring" | "baseline_low" | "baseline_high";
+export type VsMiss = {
+  month: string;
+  category_id: number | null;
+  category: string;
+  flow: "income" | "expense";
+  forecast: string;
+  actual: string;
+  difference: string;
+  hint: VsHint | null;
+  recurring_id: number | null;
+};
+export type VsPaceCategory = {
+  category_id: number | null;
+  category: string;
+  flow: "income" | "expense";
+  expected: string;
+  actual: string;
+  difference: string;
+  ahead: boolean;
+};
+/** `GET /api/forecast/vs-actual`: what the forecast predicted for a month next to what happened. */
+export type ForecastVsActual = {
+  account_type: AccountType;
+  today: string;
+  months: VsMonth[];
+  pace: null | {
+    month: string;
+    through: string;
+    elapsed: number;
+    income: { expected: string; actual: string; difference: string };
+    expense: { expected: string; actual: string; difference: string };
+    categories: VsPaceCategory[];
+  };
+  summary: { months_tracked: number; typical_balance_miss: string | null };
+  misses: VsMiss[];
+};

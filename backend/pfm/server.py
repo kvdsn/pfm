@@ -543,7 +543,12 @@ def create_app(database_path: Optional[Path] = None, frontend_dist: Path = FRONT
 
     @app.get("/api/forecast")
     def get_forecast(account_type: AccountType) -> dict[str, Any]:
+        core.ensure_snapshot_safely(database_path)
         return core.forecast(database_path)[account_type]
+
+    @app.get("/api/forecast/vs-actual")
+    def get_forecast_vs_actual(account_type: AccountType) -> dict[str, Any]:
+        return core.forecast_vs_actual(database_path, account_type)
 
     @app.get("/api/forecast/consulting")
     def get_consulting_payments() -> dict[str, Any]:

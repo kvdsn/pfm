@@ -218,6 +218,11 @@ def remove_category(database_path: Path, category_id: int) -> None:
         )
         db.execute("DELETE FROM category_rules WHERE category_id = ?", (category_id,))
         db.execute("DELETE FROM category_budgets WHERE category_id = ?", (category_id,))
+        uncategorized = uncategorized_category_id(db, category["account_type"])
+        db.execute(
+            "UPDATE forecast_snapshot_lines SET category_id = ?, category_name = ? WHERE category_id = ?",
+            (uncategorized, UNCATEGORIZED, category_id),
+        )
         db.execute("UPDATE recurring_items SET category_id = NULL WHERE category_id = ?", (category_id,))
         db.execute("UPDATE planned_items SET category_id = NULL WHERE category_id = ?", (category_id,))
         for column in ("personal_category_id", "business_category_id"):
@@ -249,6 +254,14 @@ def merge_categories(database_path: Path, account_type: str, source_id: int, tar
             (target_id, source_id),
         )
         db.execute("DELETE FROM category_budgets WHERE category_id = ?", (source_id,))
+        db.execute(
+            """
+            UPDATE forecast_snapshot_lines
+            SET category_id = ?, category_name = (SELECT name FROM categories WHERE id = ?)
+            WHERE category_id = ?
+            """,
+            (target_id, target_id, source_id),
+        )
         db.execute("UPDATE recurring_items SET category_id = ? WHERE category_id = ?", (target_id, source_id))
         db.execute("UPDATE planned_items SET category_id = ? WHERE category_id = ?", (target_id, source_id))
         for column in ("personal_category_id", "business_category_id"):

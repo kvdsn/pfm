@@ -92,7 +92,21 @@ The Forecast page also estimates two things:
   - **Settings:** all of these rules are settings, to confirm with your accountant.
 - **Director loan:** Entity transfers from the loan start count as a loan to the director. It carries simple daily interest (3.5% by default), never on a negative balance.
 
-The Forecast switch (S) hides all projections from the year table, the graph and the year tabs.
+### Forecast vs reality
+
+For Personal and Business, the forecast is compared with what happened.
+
+- **Snapshots:** the first time the forecast is computed in a month, the app saves it, once per month. A month is judged against its own snapshot, as the forecast showed it then: what was already booked, plus what was still projected.
+- **Reality:** the year table's figures, so a late import fills a month in afterwards. A past month counts as complete once every active bank account has an import made after the month ended.
+- **Miss:** a balance outside the snapshot's range, a baseline category outside its own range of past errors, or any other category off by more than €5. Only complete months count as misses.
+- **Current month:** compared with the forecast's pace. Dated items count once their date has passed, and baselines by the share of the month gone.
+- **Hints:** Amount changed (a recurring payment), One-off, Make recurring?, and Baseline too low or too high (three months in a row). They link to where you'd change something, and never change anything themselves.
+- **Where:**
+  - in the year table, the difference under each figure, with the details in its tooltip;
+  - in the balance graph, a marker for each predicted month-end balance;
+  - on the Forecast page, a section with the summary, this month's pace and the biggest misses.
+
+The Forecast switch (S) hides all projections from the year table, the graph and the year tabs, and the comparison with them.
 
 ## Backups
 

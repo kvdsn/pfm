@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BalanceChart } from "./BalanceChart";
-import type { Forecast, ForecastMonth } from "./types";
+import type { Forecast, ForecastMonth, ForecastVsActual } from "./types";
 
 // jsdom has no layout: report a fixed size to the chart.
 beforeEach(() => {
@@ -50,5 +50,31 @@ describe("BalanceChart forecast", () => {
     expect(container.querySelector(".forecast-line")).toBeNull();
     expect(container.querySelector(".balance-line")).toBeInTheDocument();
     expect(screen.queryByText(/Dashed/)).not.toBeInTheDocument();
+  });
+});
+
+describe("BalanceChart forecast vs reality", () => {
+  const vs = {
+    months: [{
+      month: "2026-09", snapshot_date: "2026-09-01", status: "complete",
+      balance: { forecast: "1300.00", low: "900.00", high: "1700.00", actual: "1000.00", difference: "-300.00", miss: false },
+    }],
+  } as unknown as ForecastVsActual;
+
+  it("marks each comparison month's predicted balance, with actual, predicted and range on hover", () => {
+    const { container } = render(<BalanceChart history={history} forecast={forecast} vsActual={vs} year="2026" />);
+    const markers = container.querySelectorAll(".vs-marker");
+    expect(markers).toHaveLength(1);
+    const title = markers[0].querySelector("title")!.textContent!;
+    expect(title).toContain("actual € 1.000,00");
+    expect(title).toContain("predicted € 1.300,00");
+    expect(title).toContain("€ 900,00 – € 1.700,00");
+  });
+
+  it("draws no marker without a comparison or for another year", () => {
+    const { container, rerender } = render(<BalanceChart history={history} forecast={forecast} year="2026" />);
+    expect(container.querySelector(".vs-marker")).toBeNull();
+    rerender(<BalanceChart history={history} forecast={forecast} vsActual={vs} year="2027" />);
+    expect(container.querySelector(".vs-marker")).toBeNull();
   });
 });
