@@ -1,18 +1,19 @@
-"""Copies of imported export files, kept in the source-data folder next to the database."""
+"""Copies of imported export files, kept in the source-data folder next to the database backups."""
 
 import hashlib
 from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from .database import masked_iban
+from .database import default_backup_dir, masked_iban
 from .parsing import ParsedExport
 
 SOURCE_DIR_NAME = "source-data"
 
 
 def source_dir(database_path: Path) -> Path:
-    return database_path.parent / SOURCE_DIR_NAME
+    """In the backup folder, so the copies are kept wherever the backups are."""
+    return default_backup_dir(database_path) / SOURCE_DIR_NAME
 
 
 def account_folder_name(bank: str, kind: str, account: str) -> str:

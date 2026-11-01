@@ -48,6 +48,13 @@ class SourceFileTests(unittest.TestCase):
         self.assertEqual(result["source_file"], expected)
         self.assertEqual((self.root / "source-data" / expected).read_bytes(), contents)
 
+    def test_copies_are_kept_in_the_backup_folder_when_one_is_set(self):
+        backups = self.root / "backups"
+        os.environ["PFM_BACKUP_DIR"] = str(backups)
+        result = self.import_file(self.export("01/05/2026"))
+        self.assertTrue((backups / "source-data" / result["source_file"]).is_file())
+        self.assertFalse((self.root / "source-data").exists())
+
     def test_a_single_card_statement_is_named_by_its_debit_date(self):
         parsed = ParsedExport(
             account="1234565000", bank="Belfius", kind="card", rows=[{"_booking_date": "2024-06-13"}],

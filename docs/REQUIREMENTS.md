@@ -20,7 +20,7 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
 - **Accounts** are recognized by their IBAN, or for cards by the card number (KBC) or the statement's customer reference (Belfius). The first import of an unknown account asks which entity it belongs to, and the app remembers the answer.
 - **Preview:** the app previews every import and stages it until you confirm. You can import several files at once, and the preview lists them per account.
 - **Duplicates** are skipped by fingerprint, so overlapping exports can be imported freely. The original row data is kept. Belfius adds a statement and transaction number once a transaction is on a statement; a row that differs from an imported one only by these numbers is still a duplicate.
-- **Source copies:** after you confirm, a copy of each file is saved in `source-data/<entity>/<bank> account|card <last 4 digits>/`. The name is the statement's debit date for a card statement, and the booking-date range otherwise. The app never overwrites or duplicates a copy. A failed copy doesn't stop the import. A folder moves with its account when the account changes entity.
+- **Source copies:** after you confirm, a copy of each file is saved in `source-data/<entity>/<bank> account|card <last 4 digits>/` in the backup folder. The name is the statement's debit date for a card statement, and the booking-date range otherwise. The app never overwrites or duplicates a copy. A failed copy doesn't stop the import. A folder moves with its account when the account changes entity.
 - **Undo import** removes that import's transactions but keeps account mappings and categories. When those transactions have notes or follow-ups, the confirmation warns that they will be lost.
 
 ## Reports

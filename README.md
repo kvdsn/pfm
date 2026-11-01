@@ -28,9 +28,9 @@ PFM_HOME=data/demo PYTHONPATH=backend .venv/bin/python -m pfm
 
 - **Database:** `data/finance.sqlite3`, created empty on first start. Set `PFM_HOME` to use another folder. Keep it out of cloud-synced folders: sync tools can corrupt SQLite's `-wal` and `-shm` files.
 - **Backups:** in `PFM_BACKUP_DIR`, or next to the database when it isn't set. This folder can be synced.
-- **Imported files:** a copy of each imported file in `data/source-data/<entity>/<account>/`.
+- **Imported files:** a copy of each imported file in `source-data/<entity>/<account>/` in the backup folder.
 
-The whole `data/` folder is ignored by git.
+The whole `data/` folder is ignored by git; keep the backup folder outside the repository.
 
 ## Importing
 

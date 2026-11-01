@@ -4,7 +4,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
 
 ## Run, build, test
 
-- **Database:** `data/finance.sqlite3`. The whole `data/` folder is git-ignored, and it also holds the imported files in `data/source-data/`.
+- **Database:** `data/finance.sqlite3`. The whole `data/` folder is git-ignored. Copies of imported files are in `source-data/` in the backup folder (in `data/` only when `PFM_BACKUP_DIR` is unset).
   - Leave `PFM_HOME` unset.
   - `PFM_BACKUP_DIR` is the user's synced backup folder. Read it from the running server (`ps eww -o command= -p <pid>`) or ask, and never write it into the repo.
   - An empty app usually means `PFM_HOME` is set or the database is missing: the app silently creates an empty one.
@@ -36,7 +36,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/revolut.py`: Revolut, keyed as `REVOLUT-CURRENT-EUR`.
   - `core/card_exports.py`: KBC card CSVs and Belfius PDFs.
   - `core/imports.py`: staging, committing and undoing imports, accounts, and the accounts overview.
-  - `core/source_files.py`: copies of imported files. A failed copy is never fatal.
+  - `core/source_files.py`: copies of imported files, in the backup folder. A failed copy is never fatal.
 - **`core/statements.py`:** card statements and `refresh_card_settlements`. `statement_rows` replays its carried-credit logic for display; keep the two in sync.
 - **Transactions and categories:**
   - `core/describe.py`: raw bank texts to a merchant and one detail line.

@@ -7,6 +7,7 @@ Everything here is invented: the names, account numbers and amounts belong to no
 import argparse
 import csv
 import io
+import os
 import random
 import sys
 from datetime import date, timedelta
@@ -217,6 +218,8 @@ def main() -> None:
     default = Path(__file__).resolve().parents[2] / "data" / "demo"
     parser.add_argument("folder", nargs="?", type=Path, default=default, help=f"where to create it (default {default})")
     folder = parser.parse_args().folder
+    # The demo's imported files stay in its own folder, never in a real backup folder.
+    os.environ.pop("PFM_BACKUP_DIR", None)
     try:
         database = build_demo(folder)
     except FileExistsError as error:
