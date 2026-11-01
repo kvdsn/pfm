@@ -63,6 +63,8 @@ BELFIUS_KNOWN_COLUMNS = {
 BELFIUS_SALDO_KEY = "Laatste saldo"
 BELFIUS_SALDO_MOMENT_KEY = "Datum/uur van het laatste saldo"
 BELFIUS_RANGE_END_KEY = "Boekingsdatum tot en met"
+# Belfius fills these in only once a transaction is on a statement, so an earlier export has them blank.
+BELFIUS_STATEMENT_COLUMNS = ("Rekeninguittrekselnummer", "Transactienummer")
 
 
 def _belfius_saldo_anchor(preamble: dict[str, str]) -> Optional[int]:
@@ -255,6 +257,26 @@ def _parse_csv(contents: bytes) -> ParsedExport:
     if len(accounts) != 1:
         raise ValueError("A CSV import must contain transactions from exactly one account")
     return ParsedExport(next(iter(accounts)), "KBC", "bank", rows, sorted(set(headers) - KNOWN_COLUMNS))
+
+
+def pending_fingerprints(rows: list[dict[str, str]]) -> list[Optional[str]]:
+    """Per row, the fingerprint it had in an export taken before Belfius numbered it, with repeats numbered like
+    `_number_identical_rows`; None for a row without a statement or transaction number."""
+    seen: dict[str, int] = {}
+    fingerprints: list[Optional[str]] = []
+    for row in rows:
+        if not any(row.get(column) for column in BELFIUS_STATEMENT_COLUMNS):
+            fingerprints.append(None)
+            continue
+        pending = {key: value for key, value in row.items() if not key.startswith("_")}
+        pending.update({column: "" for column in BELFIUS_STATEMENT_COLUMNS})
+        fingerprint = transaction_fingerprint(pending)
+        count = seen.get(fingerprint, 0)
+        seen[fingerprint] = count + 1
+        if count:
+            fingerprint = transaction_fingerprint({**pending, "_occurrence": str(count)})
+        fingerprints.append(fingerprint)
+    return fingerprints
 
 
 def transaction_fingerprint(row: dict[str, str]) -> str:

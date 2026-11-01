@@ -342,6 +342,59 @@ class FinanceCoreTests(unittest.TestCase):
             ],
         )
 
+    def _belfius_numbered_exports(self):
+        """The same October rows exported while pending (no numbers, with a balance) and once numbered, the
+        numbered export taken the morning after its range with two newer rows, so its balance is not used."""
+        pending_rows = [
+            {"Boekingsdatum": "16/10/2026", "Bedrag": "-12,50", "Transactie": "SHOP"},
+            {"Boekingsdatum": "12/10/2026", "Bedrag": "-3,20", "Transactie": "COFFEE"},
+            {"Boekingsdatum": "12/10/2026", "Bedrag": "-3,20", "Transactie": "COFFEE"},
+            {"Boekingsdatum": "01/10/2026", "Bedrag": "900,00", "Transactie": "SALARY"},
+        ]
+        pending = belfius_csv(
+            [{**row, "Valutadatum": row["Boekingsdatum"], "Rekeninguittrekselnummer": "", "Transactienummer": ""}
+             for row in pending_rows],
+            range_end="16/10/2026",
+            saldo="500,00 EUR",
+        )
+        numbered = belfius_csv(
+            [
+                {"Boekingsdatum": "23/10/2026", "Valutadatum": "23/10/2026", "Bedrag": "-8,00", "Transactie": "BAKERY"},
+                {"Boekingsdatum": "19/10/2026", "Valutadatum": "19/10/2026", "Bedrag": "-150,00", "Transactie": "RENT"},
+                *({**row, "Valutadatum": row["Boekingsdatum"]} for row in pending_rows),
+            ],
+            range_end="31/10/2026",
+            saldo="342,00 EUR",
+            saldo_time="01/11/2026 10:50:08",
+        )
+        return pending, numbered
+
+    def _import(self, name, contents):
+        preview = core.stage_import(self.database, name, contents, self.staging)
+        result = core.commit_import(self.database, preview["token"], "personal", self.staging)
+        return preview, result
+
+    def test_belfius_rows_numbered_since_an_earlier_export_are_duplicates_and_chain_balances_forward(self):
+        pending, numbered = self._belfius_numbered_exports()
+        self._import("pending.csv", pending)
+        preview, result = self._import("numbered.csv", numbered)
+        self.assertEqual((preview["duplicate_count"], preview["new_count"]), (4, 2))
+        self.assertEqual((result["imported"], result["duplicates_skipped"]), (2, 4))
+        with core.connect(self.database) as db:
+            balances = db.execute(
+                "SELECT booking_date, balance_cents FROM transactions WHERE booking_date > '2026-10-16' "
+                "ORDER BY booking_date"
+            ).fetchall()
+        self.assertEqual([tuple(row) for row in balances], [("2026-10-19", 35000), ("2026-10-23", 34200)])
+        account = next(item for item in core.account_overview(self.database) if item["bank"] == "Belfius")
+        self.assertEqual(account["latest_balance"], "342.00")
+
+    def test_belfius_pending_export_imported_after_the_numbered_one_is_all_duplicates(self):
+        pending, numbered = self._belfius_numbered_exports()
+        self._import("numbered.csv", numbered)
+        preview, result = self._import("pending.csv", pending)
+        self.assertEqual((preview["duplicate_count"], result["imported"]), (4, 0))
+
     def test_belfius_import_without_anchor_keeps_balances_empty(self):
         contents = belfius_csv(
             [

@@ -17,7 +17,7 @@ from .database import (
     masked_iban,
     require_account_type,
 )
-from .parsing import parse_export, transaction_fingerprint
+from .parsing import parse_export, pending_fingerprints, transaction_fingerprint
 from .rules import account_rules, classify, matching_rule, rule_values
 from .source_files import move_account_folder, save_source_file
 from .statements import refresh_card_settlements, remove_empty_statements, store_statements
@@ -149,31 +149,82 @@ def remap_account(database_path: Path, account_id: int, account_type: str) -> No
         _move_source_folder(database_path, account, account_type)
 
 
-def fill_chained_balances(db: sqlite3.Connection, rows: list[dict[str, str]], account: Any) -> None:
-    """Reconstruct missing Belfius balances from a previously imported newer export."""
+def _known_fingerprints(db: sqlite3.Connection, account: Any) -> dict[str, Optional[int]]:
+    """The account's stored fingerprints, with Belfius rows also under their pending fingerprint, each with the
+    row's balance."""
+    known: dict[str, Optional[int]] = {}
+    if account is None:
+        return known
+    by_import: dict[int, list[sqlite3.Row]] = {}
+    for row in db.execute(
+        "SELECT import_id, fingerprint, source_json, balance_cents FROM transactions "
+        "WHERE account_id = ? ORDER BY import_id, row_number",
+        (account["id"],),
+    ):
+        known[row["fingerprint"]] = row["balance_cents"]
+        by_import.setdefault(row["import_id"], []).append(row)
+    for stored in by_import.values():
+        for row, pending in zip(stored, pending_fingerprints([json.loads(row["source_json"]) for row in stored])):
+            if pending is not None:
+                known.setdefault(pending, row["balance_cents"])
+    return known
+
+
+def _is_known(fingerprint: str, pending: Optional[str], known: Any) -> bool:
+    return fingerprint in known or (pending is not None and pending in known)
+
+
+def fill_chained_balances(
+    db: sqlite3.Connection, rows: list[dict[str, str]], account: Any, known: dict[str, Optional[int]]
+) -> None:
+    """Reconstruct missing Belfius balances: back from a newer import, or else forward from the balances of the
+    rows this export repeats, starting from the last balance before it."""
     if not rows or rows[0].get("_chain_anchor") != "1":
         return
-    newest_date = max(row["_booking_date"] for row in rows)
-    anchor = None
-    if account is not None:
-        anchor = db.execute(
-            """
-            SELECT amount_cents, balance_cents FROM transactions
-            WHERE account_id = ? AND deleted_at IS NULL
-              AND balance_cents IS NOT NULL AND booking_date > ?
-            ORDER BY booking_date ASC, id DESC
-            LIMIT 1
-            """,
-            (int(account["id"]), newest_date),
-        ).fetchone()
     for row in rows:
         row.pop("_chain_anchor", None)
-    if anchor is None:
+    if account is None:
         return
-    balance = int(anchor["balance_cents"]) - int(anchor["amount_cents"])
-    for row in sorted(rows, key=lambda row: int(row["_row_number"])):
-        row["_balance_cents"] = str(balance)
-        balance -= int(row["_amount_cents"])
+    oldest_first = sorted(
+        zip(rows, pending_fingerprints(rows)), key=lambda pair: int(pair[0]["_row_number"]), reverse=True
+    )
+    newest_date = max(row["_booking_date"] for row in rows)
+    anchor = db.execute(
+        """
+        SELECT amount_cents, balance_cents FROM transactions
+        WHERE account_id = ? AND deleted_at IS NULL
+          AND balance_cents IS NOT NULL AND booking_date > ?
+        ORDER BY booking_date ASC, id DESC
+        LIMIT 1
+        """,
+        (int(account["id"]), newest_date),
+    ).fetchone()
+    if anchor is not None:
+        balance = int(anchor["balance_cents"]) - int(anchor["amount_cents"])
+        for row, _ in reversed(oldest_first):
+            row["_balance_cents"] = str(balance)
+            balance -= int(row["_amount_cents"])
+        return
+    before = db.execute(
+        """
+        SELECT balance_cents FROM transactions
+        WHERE account_id = ? AND deleted_at IS NULL
+          AND balance_cents IS NOT NULL AND booking_date < ?
+        ORDER BY booking_date DESC, import_id DESC, row_number ASC
+        LIMIT 1
+        """,
+        (int(account["id"]), min(row["_booking_date"] for row in rows)),
+    ).fetchone()
+    running = None if before is None else int(before["balance_cents"])
+    for row, pending in oldest_first:
+        fingerprint = transaction_fingerprint(row)
+        stored = known.get(fingerprint) if fingerprint in known else known.get(pending) if pending else None
+        if stored is not None:
+            running = stored
+        elif running is not None:
+            running += int(row["_amount_cents"])
+        if running is not None:
+            row["_balance_cents"] = str(running)
 
 
 def _import_records(db: sqlite3.Connection, where: str, params: tuple, limit: Optional[int] = None) -> list[dict[str, Any]]:
@@ -257,23 +308,17 @@ def stage_import(
     _expire_staged_imports(staging, now)
     with connect(database_path) as db:
         account = _find_account(db, iban)
-        fill_chained_balances(db, rows, account)
-        existing = set()
-        if account is not None:
-            existing = {
-                row["fingerprint"]
-                for row in db.execute(
-                    "SELECT fingerprint FROM transactions WHERE account_id = ?", (account["id"],)
-                )
-            }
+        known = _known_fingerprints(db, account)
+        fill_chained_balances(db, rows, account, known)
         rules = {account_type: account_rules(db, account_type) for account_type in ACCOUNT_TYPES}
 
     duplicates = 0
-    for row in rows:
+    existing = set(known)
+    for row, pending in zip(rows, pending_fingerprints(rows)):
         fingerprint = transaction_fingerprint(row)
-        if fingerprint in existing:
+        if _is_known(fingerprint, pending, existing):
             duplicates += 1
-        existing.add(fingerprint)
+        existing.update(item for item in (fingerprint, pending) if item)
 
     preview = []
     for row in rows[:PREVIEW_ROWS]:
@@ -347,7 +392,13 @@ def commit_import(
         ).lastrowid)
         statement_ids = store_statements(db, account_id, parsed.statements)
         rules = account_rules(db, account_type)
-        for row in staged["rows"]:
+        existing = set(_known_fingerprints(db, account))
+        for row, pending in zip(staged["rows"], pending_fingerprints(staged["rows"])):
+            fingerprint = transaction_fingerprint(row)
+            if _is_known(fingerprint, pending, existing):
+                duplicates += 1
+                continue
+            existing.update(item for item in (fingerprint, pending) if item)
             cents = int(row["_amount_cents"])
             match = matching_rule(rules, row)
             if match:
@@ -382,7 +433,7 @@ def commit_import(
                         get_category_id(db, account_type, category_name),
                         flow_type,
                         json.dumps({key: value for key, value in row.items() if not key.startswith("_")}, ensure_ascii=False),
-                        transaction_fingerprint(row),
+                        fingerprint,
                         statement_ids.get(row.get("_statement", "")),
                         source,
                         match.id if match else None,

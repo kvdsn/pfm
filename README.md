@@ -40,7 +40,7 @@ Open **Accounts** and choose **Import files**. You can select several files at o
 - **Belfius** account CSVs and card statement PDFs
 - **Revolut** account statement CSVs (EUR only; pending, reverted and declined rows are skipped)
 
-The preview shows each account's new and already-imported transactions. For an account it hasn't seen before, you choose once whether it is Personal, Business or Kids. Duplicates are always skipped, so overlapping exports are fine. Belfius exports have no running balance, so the app reconstructs it: import the newest export first.
+The preview shows each account's new and already-imported transactions. For an account it hasn't seen before, you choose once whether it is Personal, Business or Kids. Duplicates are always skipped, so overlapping exports are fine. Belfius exports have no running balance, so the app reconstructs it from the export's final balance or from the balances it already knows.
 
 Each card becomes its own account with its purchases. When a statement's purchases add up to a settlement on a bank account, the settlement no longer counts in totals, so nothing is counted twice. Select the settlement to see the purchases.
 

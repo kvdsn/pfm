@@ -13,13 +13,13 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
 
 - **Formats:**
   - **KBC:** account CSVs in Windows-1252 or UTF-8 with BOM. The signed `Bedrag` is the amount, and `Saldo` the balance.
-  - **Belfius:** account CSVs. They have no per-row balance, so balances are reconstructed backwards from the export's final balance, or chained from an already imported newer export of the same account.
+  - **Belfius:** account CSVs. They have no per-row balance, so balances are reconstructed backwards from the export's final balance, or chained from an already imported newer export of the same account, or else forward from the balances already known for the rows before and in the export. The final balance is used only when it was taken by the export's end date.
   - **Revolut:** account statement CSVs. The account is keyed as "Revolut Current EUR", because the export has no IBAN. Only completed rows are imported, and the amount is Amount minus Fee.
   - **Cards:** KBC card CSVs and Belfius card statement PDFs.
   - **Currency:** EUR only. Other currencies are rejected.
 - **Accounts** are recognized by their IBAN, or for cards by the card number (KBC) or the statement's customer reference (Belfius). The first import of an unknown account asks which entity it belongs to, and the app remembers the answer.
 - **Preview:** the app previews every import and stages it until you confirm. You can import several files at once, and the preview lists them per account.
-- **Duplicates** are skipped by fingerprint, so overlapping exports can be imported freely. The original row data is kept.
+- **Duplicates** are skipped by fingerprint, so overlapping exports can be imported freely. The original row data is kept. Belfius adds a statement and transaction number once a transaction is on a statement; a row that differs from an imported one only by these numbers is still a duplicate.
 - **Source copies:** after you confirm, a copy of each file is saved in `source-data/<entity>/<bank> account|card <last 4 digits>/`. The name is the statement's debit date for a card statement, and the booking-date range otherwise. The app never overwrites or duplicates a copy. A failed copy doesn't stop the import. A folder moves with its account when the account changes entity.
 - **Undo import** removes that import's transactions but keeps account mappings and categories. When those transactions have notes or follow-ups, the confirmation warns that they will be lost.
 
