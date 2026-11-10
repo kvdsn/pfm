@@ -28,3 +28,10 @@ export const wholeMoney = (value: number) =>
 /** Euro amount with cents only when it has them, for budgets that people type in. */
 export const exactMoney = (value: number) =>
   Math.round(value * 100) % 100 === 0 ? wholeMoney(value) : money(value);
+
+/** An ISO booking date (2026-06-12) as dd/mm, or dd/mm/yy when the list spans several years. */
+export const shortDate = (iso: string, withYear = false) => {
+  const [year, month, day] = iso.slice(0, 10).split("-");
+  if (!year || !month || !day) return iso;
+  return withYear ? `${day}/${month}/${year.slice(2)}` : `${day}/${month}`;
+};

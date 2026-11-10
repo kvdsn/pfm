@@ -65,7 +65,7 @@ export function YearOverview({
   const vsMonths: (PacedMonth | undefined)[] = forecastYear
     ? Array(12).fill(undefined) : vsMonthsOfYear(vsActual, year).map((month) => withPace(month, vsActual?.pace));
   /**
-   * The difference from the forecast in small text under a figure, such as "+48"; the tooltip has the forecast.
+   * The difference from the forecast in small text after a figure on the same line, such as "+48"; the tooltip has the forecast.
    * A difference under a euro is left out. Only a complete month's miss, or spending ahead of pace, is colored.
    */
   const comparisonOf = (
@@ -82,7 +82,7 @@ export function YearOverview({
     if (Math.round(difference) === 0) return null;
     const tone = vsTone(difference, flow, miss && month.status !== "waiting");
     const note = `${vsNote(forecastAmount, actualAmount, month.snapshot_date, month.status === "current" ? "Expected so far" : "Forecast")}${month.status === "current" ? "\nMonth in progress: expected and actual so far" : month.status === "waiting" ? "\nWaiting for imports of the whole month" : ""}`;
-    return <span className={`year-diff ${tone}`} title={note} data-testid="year-diff">{signedMoney(difference)}</span>;
+    return <span className={`year-diff ${tone}`} title={note} data-testid="year-diff"><span className="year-diff-text">{signedMoney(difference)}</span></span>;
   };
   const monthForecasts = monthsOfYear(forecast, year);
   /** Per month, the projected lines per category; for the rest of the current year (its current month too), or all of a forecast year. */

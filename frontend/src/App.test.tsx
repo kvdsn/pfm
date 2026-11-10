@@ -91,7 +91,7 @@ describe("Transaction sorting", () => {
     expect(merchants()).toEqual(["Merchant 2", "Merchant 1", "Merchant 3"]);
     press("ArrowDown");
     press("ArrowDown");
-    expect(screen.getByRole("group", { name: "Selected transaction" })).toHaveTextContent("Merchant 1 ·");
+    expect(screen.getByText("Merchant 1").closest("tr")).toHaveClass("active-transaction-row");
     fireEvent.click(screen.getByRole("button", { name: /Date/ }));
     expect(merchants()).toEqual(["Merchant 1", "Merchant 2", "Merchant 3"]);
   });

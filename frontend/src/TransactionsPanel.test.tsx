@@ -301,6 +301,41 @@ describe("TransactionsPanel selection", () => {
   });
 });
 
+describe("TransactionsPanel dates and one-line rows", () => {
+  it("shows dd/mm with the ISO date in the tooltip, and the year when listing all years", () => {
+    const { container } = renderPanel([transaction(1, { booking_date: "2025-03-01" })]);
+    const cell = container.querySelector(".transaction-date")!;
+    expect(cell).toHaveTextContent("01/03");
+    expect(cell).toHaveAttribute("title", "2025-03-01");
+    cleanup();
+    const all = renderPanel([transaction(1, { booking_date: "2025-03-01" })], null, { followUpFilter: "open" });
+    expect(all.container.querySelector(".transaction-date")).toHaveTextContent("01/03/25");
+  });
+
+  it("puts merchant and details on one line, with the full text in the tooltip", () => {
+    const { container } = renderPanel([transaction(1, { details: "Order 42" })]);
+    const cell = container.querySelector(".transaction-summary")!;
+    expect(cell.querySelectorAll(".transaction-line")).toHaveLength(1);
+    expect(cell).toHaveTextContent("Merchant 1 · Order 42");
+    expect(cell).toHaveAttribute("title", "Merchant 1 · Order 42");
+  });
+
+  it("has no separate actions line in the table head, and puts the controls in the dock", () => {
+    const { container } = renderPanel([transaction(1, {})], 1);
+    expect(container.querySelector("thead .transaction-actions")).toBeNull();
+    expect(container.textContent).not.toContain("Select a transaction to add a note");
+    const dock = container.querySelector(".transaction-dock") as HTMLElement;
+    expect(within(dock).getByRole("group", { name: "Selected transaction" })).toBeInTheDocument();
+    expect(within(dock).getByRole("button", { name: "Add note" })).toBeInTheDocument();
+    expect(within(dock).getByRole("checkbox", { name: "Follow up" })).toBeInTheDocument();
+  });
+
+  it("shows no hint and no controls while nothing is selected", () => {
+    const { container } = renderPanel([transaction(1, {})], null);
+    expect(container.querySelector(".transaction-actions")).toBeNull();
+  });
+});
+
 describe("TransactionsPanel notes and follow-ups", () => {
   const noteField = () => screen.getByRole("textbox", { name: "Note" });
 

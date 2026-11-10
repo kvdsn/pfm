@@ -94,6 +94,38 @@ check(
 );
 await shoot("01-overview");
 
+// Year table rows are one line high whether the forecast shows or not: measured at three widths, switch on and off.
+{
+  const original = page.viewport();
+  const rowHeights = () => page.evaluate(() => [...document.querySelectorAll(".year-summary-table tbody tr")].map((row) => Math.round(row.getBoundingClientRect().height * 10) / 10));
+  const switchState = () => page.evaluate(() => document.querySelector(".forecast-switch")?.getAttribute("aria-checked") === "true");
+  const setSwitch = async (on) => {
+    if ((await switchState()) !== on) {
+      await page.click(".forecast-switch");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  };
+  if (await page.$(".forecast-switch")) {
+    const initial = await switchState();
+    for (const width of [1728, 1024, 850]) {
+      await page.setViewport({ ...original, width });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await setSwitch(true);
+      const on = await rowHeights();
+      const clipped = await page.evaluate(() => [...document.querySelectorAll(".year-summary-table tbody td.current-month, .year-summary-table tbody td.projected")].filter((cell) => cell.scrollWidth > cell.clientWidth + 1).map((cell) => `${cell.textContent}:${cell.scrollWidth}/${cell.clientWidth}`));
+      await setSwitch(false);
+      const off = await rowHeights();
+      const same = on.length === off.length && on.every((height, index) => Math.abs(height - off[index]) < 0.6);
+      const fits = clipped.length === 0;
+      console.log(`     row heights at ${width}px: on ${[...new Set(on)].join("/")}, off ${[...new Set(off)].join("/")}`);
+      check(`year table rows keep their height with the forecast on and off at ${width}px`, same, `on ${on.join(",")} off ${off.join(",")}`);
+      check(`year table cells show their content with the forecast on at ${width}px`, fits, clipped.slice(0, 5).join(" "));
+    }
+    await setSwitch(initial);
+    await page.setViewport(original);
+  }
+}
+
 // Forecast: a future month of the current year shows projected amounts, in italics. There is nothing to project
 // in December, or on a server without /api/forecast.
 {
@@ -115,7 +147,7 @@ await shoot("01-overview");
 
 /**
  * Scrolls so the table's top edge is `offset` px above the viewport top; returns where its head, its column
- * headings (the head's last row, under the transactions table's action row) and its bottom ended up.
+ * headings (the head's last row) and its bottom ended up.
  */
 const scrollPastTableTop = async (tableSelector, offset) => {
   await page.evaluate(({ selector, above }) => {

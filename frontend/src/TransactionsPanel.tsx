@@ -5,7 +5,7 @@ import { isAmountQuery } from "./amountSearch";
 import { clearOnEscape } from "./hooks";
 import type { Annotation, FollowUp, FollowUpFilter, SelectedCategory, SettlementStatement, Transaction } from "./types";
 import { api } from "./api";
-import { money } from "./format";
+import { money, shortDate } from "./format";
 import type { SortKey, TransactionSort } from "./transactionSort";
 
 /** Own-account moves and itemized card payments have no category to set, so they cannot be selected. */
@@ -174,6 +174,22 @@ function OriginalTexts({ transaction }: { transaction: Transaction }) {
   );
 }
 
+/** The Transaction cell: the merchant and, after a dot, the details, on one line that is cut with an ellipsis. */
+function TransactionSummary({ transaction, marker = false }: { transaction: Transaction; marker?: boolean }) {
+  const merchant = transaction.merchant || "—";
+  return (
+    <td className="transaction-summary" title={transaction.details ? `${merchant} · ${transaction.details}` : merchant}>
+      <span className="transaction-line">
+        <span className="transaction-merchant">
+          {merchant}
+          {marker && <AnnotationMarker transaction={transaction} />}
+        </span>
+        {transaction.details && <span className="transaction-details">{" · "}{transaction.details}</span>}
+      </span>
+    </td>
+  );
+}
+
 const STATEMENT_PREVIEW = 10;
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -182,10 +198,12 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
  * The statement behind an itemized card settlement, as rows of the transactions table under it:
  * a heading, its purchases with the table's own columns, and how they add up to the payment.
  */
-function StatementRows({ transactionId, columns, selecting, onOpenRule }: {
+function StatementRows({ transactionId, columns, selecting, withYear, onOpenRule }: {
   transactionId: number;
   columns: number;
   selecting: boolean;
+  /** Whether dates show their year, as when the list spans all years. */
+  withYear: boolean;
   onOpenRule: (ruleId: number) => void;
 }) {
   const [statement, setStatement] = useState<SettlementStatement | null>(null);
@@ -229,12 +247,9 @@ function StatementRows({ transactionId, columns, selecting, onOpenRule }: {
       {purchases.map((purchase) => (
         <tr className="statement-purchase-row" key={purchase.id}>
           {selecting && <td className="select-cell" />}
-          <td className="transaction-date">{purchase.booking_date}</td>
+          <td className="transaction-date" title={purchase.booking_date}>{shortDate(purchase.booking_date, withYear)}</td>
           <td className="transaction-account">{purchase.account}</td>
-          <td className="transaction-summary">
-            <span className="transaction-merchant">{purchase.merchant || "—"}</span>
-            {purchase.details && <span className="transaction-details">{purchase.details}</span>}
-          </td>
+          <TransactionSummary transaction={purchase} />
           <td className={`transaction-amount ${Number(purchase.amount) < 0 ? "negative" : "positive"}`}>{money(purchase.amount)}</td>
           <td className="transaction-category">
             <span className={`statement-category${!purchase.category || purchase.category === "Uncategorized" ? " uncategorized-label" : ""}`}>{purchase.category || "Uncategorized"}</span>
@@ -371,6 +386,7 @@ function TransactionDock({
   noteOpen,
   noteInput,
   onAnnotate,
+  onOpenNote,
   onLeave,
   onCloseNote,
   statementOpen,
@@ -380,6 +396,7 @@ function TransactionDock({
   noteOpen: boolean;
   noteInput: React.RefObject<HTMLInputElement>;
   onAnnotate: (transaction: Transaction, change: Partial<Pick<Annotation, "note" | "follow_up">>) => Promise<boolean>;
+  onOpenNote: (transaction: Transaction) => void;
   onLeave: () => void;
   onCloseNote: () => void;
   statementOpen: boolean;
@@ -388,6 +405,7 @@ function TransactionDock({
   return (
     <div className="transaction-dock" role="region" aria-label="Transaction details">
       <OriginalTexts transaction={transaction} />
+      <TransactionActions transaction={transaction} onAnnotate={onAnnotate} onOpenNote={onOpenNote} onLeave={onLeave} />
       {(transaction.note || noteOpen) && (
         <NoteEditor
           transaction={transaction}
@@ -406,28 +424,25 @@ function TransactionDock({
   );
 }
 
-/** Note and follow-up actions for the selected transaction, in the table's sticky header so they stay in view. */
+/** Note and follow-up actions for the selected transaction, on the first line of the details dock. */
 function TransactionActions({
   transaction,
   onAnnotate,
   onOpenNote,
   onLeave,
 }: {
-  transaction: Transaction | undefined;
+  transaction: Transaction;
   onAnnotate: (transaction: Transaction, change: Partial<Pick<Annotation, "note" | "follow_up">>) => Promise<boolean>;
   onOpenNote: (transaction: Transaction) => void;
   onLeave: () => void;
 }) {
-  if (!transaction) {
-    return <span className="muted">Select a transaction to add a note or flag it for follow-up.</span>;
-  }
   const followUp = transaction.follow_up;
   const annotate = (change: Partial<Pick<Annotation, "note" | "follow_up">>) => {
     void onAnnotate(transaction, change);
     onLeave();
   };
   return (
-    <>
+    <div className="transaction-actions" role="group" aria-label="Selected transaction">
       <button className="button secondary" onClick={() => onOpenNote(transaction)}>
         {transaction.note ? "Edit note" : "Add note"}
       </button>
@@ -448,10 +463,7 @@ function TransactionActions({
           <button className="button secondary" onClick={() => annotate({ follow_up: "open" })}>Reopen</button>
         </>
       )}
-      <span className="transaction-actions-subject muted">
-        {transaction.merchant || "—"} · {transaction.booking_date}
-      </span>
-    </>
+    </div>
   );
 }
 
@@ -651,18 +663,6 @@ export function TransactionsPanel({
         <div className="table-scroll transactions-scroll">
           <table className="transactions-table">
             <thead>
-              <tr className="transaction-actions-row">
-                <th colSpan={columns}>
-                  <div className="transaction-actions" role="group" aria-label="Selected transaction">
-                    <TransactionActions
-                      transaction={activeTransaction}
-                      onAnnotate={onAnnotate}
-                      onOpenNote={onOpenNote}
-                      onLeave={() => activeTransaction && focusRow(activeTransaction.id)}
-                    />
-                  </div>
-                </th>
-              </tr>
               <tr>
                 {selecting && (
                   <th className="select-cell">
@@ -724,15 +724,9 @@ export function TransactionsPanel({
                           )}
                         </td>
                       )}
-                      <td className="transaction-date">{transaction.booking_date}</td>
+                      <td className="transaction-date" title={transaction.booking_date}>{shortDate(transaction.booking_date, followUpFilter !== "all")}</td>
                       <td className="transaction-account">{transaction.account}</td>
-                      <td className="transaction-summary">
-                        <span className="transaction-merchant">
-                          {transaction.merchant || "—"}
-                          <AnnotationMarker transaction={transaction} />
-                        </span>
-                        {transaction.details && <span className="transaction-details">{transaction.details}</span>}
-                      </td>
+                      <TransactionSummary transaction={transaction} marker />
                       <td className={`transaction-amount ${Number(transaction.amount) < 0 ? "negative" : "positive"}`}>
                         {money(transaction.amount)}
                       </td>
@@ -754,7 +748,7 @@ export function TransactionsPanel({
                       <CategorySource transaction={transaction} onOpenRule={onOpenRule} />
                     </tr>
                     {statementOpenId === transaction.id && transaction.itemized && (
-                      <StatementRows transactionId={transaction.id} columns={columns} selecting={selecting} onOpenRule={onOpenRule} />
+                      <StatementRows transactionId={transaction.id} columns={columns} selecting={selecting} withYear={followUpFilter !== "all"} onOpenRule={onOpenRule} />
                     )}
                     {ruleOffer?.transactionId === transaction.id && (
                       <tr className="rule-offer-row">
@@ -774,6 +768,7 @@ export function TransactionsPanel({
                       noteOpen={noteOpenId === activeTransaction.id}
                       noteInput={noteInput}
                       onAnnotate={onAnnotate}
+                      onOpenNote={onOpenNote}
                       onLeave={() => focusRow(activeTransaction.id)}
                       onCloseNote={onCloseNote}
                       statementOpen={statementOpenId === activeTransaction.id}

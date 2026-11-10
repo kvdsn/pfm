@@ -99,8 +99,8 @@ button { cursor: pointer; }
 .topbar, .brand, .section-heading, .panel-actions, .transactions-heading {
   display: flex; align-items: center; justify-content: space-between;
 }
-/* Two rows below 1680px: title and views, then the entity and year switches centered. Wider windows use one row. */
-.topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; margin-bottom: 16px; gap: 12px 16px; }
+/* Below 1680px two rows: the title and page links, then the entity and year switches at the right. From 1680px one row: title, then links, entity and year tabs pushed right. */
+.topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; margin-bottom: 16px; gap: 8px 20px; }
 .brand { justify-content: flex-start; min-width: 0; gap: 18px; }
 /* The forecast switch beside the title: a small track and thumb, on in the accent color. */
 .forecast-switch { display: inline-flex; align-items: center; gap: 7px; padding: 4px 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-soft); font: inherit; font-size: var(--text-xs); cursor: pointer; white-space: nowrap; }
@@ -110,11 +110,13 @@ button { cursor: pointer; }
 .forecast-switch[aria-checked="true"] .forecast-switch-track { background: var(--blue); }
 .forecast-switch[aria-checked="true"] .forecast-switch-thumb { transform: translateX(12px); }
 .forecast-switch:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-.topbar-actions { justify-self: end; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
-/* The year group takes the right half of a mirrored 1fr auto 1fr grid, so the entity switch stays centered whether or not years exist. */
-.topbar-controls { grid-column: 1 / -1; grid-row: 2; justify-self: center; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; max-width: 100%; }
-.topbar-controls > .account-tabs:first-child { grid-column: 2; }
-.topbar-controls > .year-tabs { grid-column: 3; justify-self: start; }
+/* The page links: plain text, the open page in the accent color with an underline. */
+.topbar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 6px; justify-self: end; max-width: 100%; margin: 0; }
+.view-link { padding: 6px 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
+.view-link:hover:not(.active) { color: var(--ink); }
+.view-link.active { color: var(--primary); font-weight: 700; border-bottom-color: var(--primary); }
+.view-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-radius: var(--radius-sm); }
+.topbar-controls { grid-column: 1 / -1; grid-row: 2; justify-self: end; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 12px; max-width: 100%; }
 .year-tabs .account-tab { font-variant-numeric: tabular-nums; }
 .year-summary-table .icon-button.balance-history-icon { display: inline-grid; place-items: center; width: 22px; height: 18px; padding: 0; border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); }
 .icon-button.balance-history-icon:hover:not(:disabled) { background: var(--subtle); }
@@ -193,10 +195,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .year-summary-table .category-name-static { display: block; flex: 1; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .year-amount-compact { display: none; }
 .year-zero { color: var(--muted-light); }
-/* The difference from the forecast under a figure. */
-.year-summary-table .year-diff { display: block; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; color: var(--muted); font-size: 10px; font-style: normal; font-weight: 400; line-height: 1.15; cursor: help; }
+/* The difference from the forecast, after a figure on the same line so rows keep one line's height. Where the column is too narrow, only a small marker stays; the tooltip has the rest. */
+.year-summary-table .year-diff { display: inline; margin-left: 3px; color: var(--muted); font-size: 9px; font-style: normal; font-weight: 400; line-height: 1; cursor: help; }
+.year-summary-table .year-diff::before { content: "•"; display: none; }
 .year-summary-table .year-diff.bad { color: var(--red); }
 .year-summary-table .year-diff.good { color: var(--green); }
+@media (max-width: 1727px) {
+  .year-summary-table .year-diff { margin-left: 2px; }
+  .year-summary-table .year-diff-text { display: none; }
+  .year-summary-table .year-diff::before { display: inline; }
+}
 .year-summary-table td.current-month, .year-summary-table th.current-month, .year-summary-table .year-group-total td.current-month { background-image: linear-gradient(var(--current-tint), var(--current-tint)); }
 .year-summary-table thead th.current-month { color: var(--ink); font-weight: 800; }
 .year-summary-table thead th.future-month { color: var(--muted-light); }
@@ -238,34 +246,39 @@ td { border-top: 1px solid var(--border); padding: 10px 8px; vertical-align: mid
 .transactions-panel .transactions-scroll { overflow: clip; }
 @media (max-width: 640px) { .transactions-panel .transactions-scroll { overflow: auto; } }
 .year-summary-table thead th { position: sticky; top: 0; z-index: 2; border-bottom: 0; box-shadow: inset 0 -1px var(--border-strong); }
-/* The whole head sticks, so the selected transaction's actions stay in view above the column headings. */
+/* The head sticks to the top of the viewport. */
 .transactions-table thead { position: sticky; top: 0; z-index: 2; }
 .transactions-table thead th { border-bottom: 0; box-shadow: inset 0 -1px var(--border-strong); }
-.transactions-table thead .transaction-actions-row th { padding: 6px 12px; background: var(--surface); color: var(--ink-soft); font-weight: 400; box-shadow: inset 0 -1px var(--border); }
-.transaction-actions { display: flex; align-items: center; gap: 8px 14px; min-height: 30px; white-space: nowrap; }
+/* The note and follow-up controls: right-aligned on the first line of the details dock. */
+.transaction-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 14px; white-space: nowrap; }
 .transaction-actions .button { min-height: 28px; padding: 0 10px; }
-.transaction-actions-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
 .preview-table { min-width: 760px; }
-.transactions-table .transaction-category-label { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 7px; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; font-size: var(--text-xs); text-align: left; }
-.transactions-table .transaction-category-label:hover { background: var(--subtle); }
+.transactions-table .transaction-category-label { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; padding: 3px 10px; border: 0; border-radius: var(--radius-pill); background: var(--hover); color: var(--ink-soft); font-size: var(--text-xs); text-align: left; }
+.transactions-table .transaction-category-label:hover { background: var(--border-strong); }
 .transactions-table .transaction-category-label.uncategorized-label,
 .uncategorized-label { background: var(--amber-soft); color: var(--amber); font-weight: 700; }
 .transactions-table .transaction-category-label.uncategorized-label:hover { background: var(--amber-soft-hover); }
 .transactions-table .uncounted-row td { color: var(--muted); }
 .transactions-table .uncounted-row .transaction-amount { font-weight: 400; }
 .uncounted-tag { display: block; padding: 5px 7px; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
-.transactions-table .transaction-summary { width: 100%; min-width: 220px; line-height: 1.4; }
-.transaction-merchant { display: block; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
-.transaction-details { display: block; color: var(--muted); overflow-wrap: anywhere; }
+/* One line per transaction: max-width 0 lets the cell take the remaining width and cut its text with an ellipsis. */
+.transactions-table tbody td { padding: 9px 8px; }
+.transactions-table .transaction-summary { width: 100%; min-width: 220px; max-width: 0; line-height: 1.5; }
+.transaction-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transaction-merchant { color: var(--ink); font-weight: 600; }
+.transaction-details { color: var(--muted); }
 .transactions-table .uncounted-row .transaction-merchant { color: var(--muted); font-weight: 400; }
 .transactions-table .transaction-date, .transactions-table .transaction-account { color: var(--ink-soft); white-space: nowrap; }
 /* The details dock sticks to the bottom of the viewport like the head sticks to the top; rows focused by the arrow keys scroll clear of both. */
 .transactions-table tfoot { position: sticky; bottom: 0; z-index: 2; }
-.transactions-table tbody tr { scroll-margin-top: 100px; scroll-margin-bottom: calc(var(--dock-height, 120px) + 8px); }
+.transactions-table tbody tr { scroll-margin-top: 56px; scroll-margin-bottom: calc(var(--dock-height, 120px) + 8px); }
 /* max-width: 0 keeps long, unbroken bank texts from widening the table; they wrap instead. */
 .transactions-table tr.transaction-dock-row td { max-width: 0; white-space: normal; padding: 8px 12px 10px; background: var(--surface); border-top: 0; box-shadow: inset 0 1px var(--border-strong); }
-.transaction-dock { display: grid; gap: 6px; justify-items: start; }
-.transaction-dock .original-texts, .transaction-dock .annotation-editor { justify-self: stretch; }
+/* The bank's texts and the note and follow-up controls share the first line; the note field and the statement link follow. */
+.transaction-dock { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: start; }
+.transaction-dock .transaction-actions { justify-self: end; max-width: 420px; padding-top: 4px; }
+.transaction-dock .annotation-editor, .transaction-dock .transaction-dock-statement { grid-column: 1 / -1; }
+.transaction-dock .transaction-dock-statement { justify-self: start; }
 .transaction-dock .annotation-editor { margin-top: 0; }
 .original-texts { display: grid; gap: 4px; margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--subtle); }
 .original-texts div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; }
@@ -306,17 +319,11 @@ td { border-top: 1px solid var(--border); padding: 10px 8px; vertical-align: mid
 footer { display: grid; gap: 8px; color: var(--muted); text-align: center; padding: 24px 0 0; font-size: var(--text-xs); }
 kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-weight: 600; text-align: center; }
 
-/* Wide enough for title, centered switches (with years) and views on one row. */
-/* One row from 1680px, which covers the 1728px display the app is mostly used on: the switches are centered as one
-   group, without mirroring the year tabs, so the seven view buttons fit beside them. */
+/* One row from 1680px, which covers the 1728px display the app is mostly used on. */
 @media (min-width: 1680px) {
-  .topbar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-  .topbar-controls { grid-column: 2; grid-row: 1; display: flex; gap: 12px; }
-  .topbar-actions { grid-column: 3; }
-}
-/* Too narrow to mirror the year group: the switches wrap and center instead. */
-@media (max-width: 800px) {
-  .topbar-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .topbar-controls { grid-column: 3; grid-row: 1; flex-wrap: nowrap; }
+  .topbar-actions { grid-column: 2; }
 }
 @media (max-width: 900px) {
   .app-shell { padding: 22px 12px; }
@@ -327,11 +334,11 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border: 1px soli
   .year-amount-full { display: none; }
   .year-amount-compact { display: inline; }
 }
-/* Too narrow for the title and seven view buttons side by side: the views get their own row. */
+/* Too narrow for the title and the links side by side: the links get their own row. */
 @media (max-width: 760px) {
   .topbar { grid-template-columns: minmax(0, 1fr); }
-  .topbar-actions { gap: 2px; justify-self: center; justify-content: center; }
-  .topbar-controls { grid-row: 3; }
+  .topbar-actions { grid-row: 2; justify-self: start; justify-content: flex-start; }
+  .topbar-controls { grid-row: 3; justify-self: start; justify-content: flex-start; }
 }
 @media (max-width: 520px) {
   .app-shell { padding: 16px 12px; }

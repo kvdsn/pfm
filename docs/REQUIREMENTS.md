@@ -37,7 +37,7 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
 - **Year table:**
   - **Columns:** twelve months, total, monthly average and share of the group. Then net change and the latest balance: the sum of each account's last known balance. Balances follow the booking date: the balance on a day is the opening balance plus everything booked up to that day, even when the bank listed a late-booked row out of date order.
   - **Compared with last year:** shown when the previous year has data, against the same period of last year. For the current year, that runs up to the day of the latest transaction.
-  - **Current month:** highlighted, with future months dimmed.
+  - **Current month:** highlighted, with future months dimmed. With the forecast on, a figure may be followed on the same line by a small difference from the forecast, so every row keeps the same height. Where the column is too narrow, only a dot stays, and its tooltip has the details.
 - **Budgets.** A category other than Uncategorized can have a yearly budget. The year table then gets a **Left** column:
   - It is amber when the amount used exceeds the budget times the share of the year that has passed (months so far, including the current one, out of 12).
   - It is red when over budget.
@@ -51,8 +51,9 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
   - A sign such as `-41` limits it to money out or in.
   - A range such as `40..50` matches amounts in that range, inclusive.
   - Together with other words, as in `hema 41,50`, the amount narrows the text match.
+- **Rows:** each transaction is one line: date as `dd/mm` (`dd/mm/yy` when listing all years; the full date is in its tooltip), account, the merchant followed by its details in muted text (cut with an ellipsis; the tooltip has it all), amount, and the category as a pill.
 - **Category edits** change only that transaction and mark it as set by hand. Bulk categorizing does the same for every ticked transaction.
-- **Notes and follow-ups:** a note holds up to 500 characters, and a follow-up is open or done. They never change a category or a total, and rules never match them. The Follow-ups and Done filters list all years.
+- **Notes and follow-ups:** a note holds up to 500 characters, and a follow-up is open or done. They never change a category or a total, and rules never match them. The Add note and Follow up controls (with Done and Reopen) sit on the first line of the details panel at the bottom of the page, shown once a transaction is selected. The Follow-ups and Done filters list all years.
 
 ## Recurring payments
 
@@ -103,7 +104,7 @@ For Personal and Business, the forecast is compared with what happened.
 - **Current month:** compared with the forecast's pace. Dated items count once their date has passed, and baselines by the share of the month gone.
 - **Hints:** Amount changed (a recurring payment), One-off, Make recurring?, and Baseline too low or too high (three months in a row). They link to where you'd change something, and never change anything themselves.
 - **Where:**
-  - in the year table, the difference under each figure, with the details in its tooltip;
+  - in the year table, the difference after each figure, with the details in its tooltip;
   - in the balance graph, a marker for each predicted month-end balance;
   - on the Forecast page, a section with the summary, this month's pace and the biggest misses.
 
@@ -124,7 +125,7 @@ The Forecast switch (S) hides all projections from the year table, the graph and
 
 ## Interface
 
-- **Layout:** one page with a top bar for the entity, year and pages. The top bar is one row from 1680px wide.
+- **Layout:** one page with a top bar: the title with the Forecast switch, then, to the right, the page links (Overview, Triage, Forecast, Categories, Rules, Accounts), the entity tabs and the year tabs. The open page is underlined. The top bar is one row from 1680px wide, and wraps to two below that.
 - **Tables** fit without horizontal scrolling at 1024px wide.
 - **Appearance:** follows the system's light or dark setting. The look is "Native": the system sans font with tabular numbers, rounded corners, panels lifted by a soft shadow, pill-shaped chips and a plum accent. Raw bank texts stay monospace.
 - **Messages:** short toasts at the bottom of the page. Dialogs show their errors next to the form.

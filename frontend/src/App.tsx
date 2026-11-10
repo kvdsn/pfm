@@ -677,6 +677,7 @@ export function App() {
         onToggleForecast={toggleForecast}
         onAccounts={() => toggleView("accounts")}
         view={view}
+        onOverview={() => { resetRulesContext(); setView("overview"); }}
         onTriage={() => toggleView("triage")}
         onRules={() => toggleView("rules")}
         onCategories={() => toggleView("categories")}

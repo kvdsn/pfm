@@ -5,7 +5,8 @@ export type View = "overview" | "triage" | "forecast" | "rules" | "categories" |
 /** The parts of the pages that hold two: the Forecast page (plan, recurring) and the Accounts page (accounts, backups). */
 export type Section = "plan" | "recurring" | "accounts" | "backups";
 
-const VIEW_BUTTONS: { view: Exclude<View, "overview">; label: string }[] = [
+const VIEW_BUTTONS: { view: View; label: string }[] = [
+  { view: "overview", label: "Overview" },
   { view: "triage", label: "Triage" },
   { view: "forecast", label: "Forecast" },
   { view: "categories", label: "Categories" },
@@ -24,6 +25,7 @@ export function TopBar({
   onToggleForecast,
   onAccounts,
   view,
+  onOverview = () => {},
   onTriage,
   onRules,
   onCategories,
@@ -41,12 +43,14 @@ export function TopBar({
   onToggleForecast?: () => void;
   onAccounts: () => void;
   view: View;
+  /** Returns to the overview. */
+  onOverview?: () => void;
   onTriage: () => void;
   onRules: () => void;
   onCategories: () => void;
   onForecast: () => void;
 }) {
-  const handlers = { triage: onTriage, forecast: onForecast, categories: onCategories, rules: onRules, accounts: onAccounts };
+  const handlers = { overview: onOverview, triage: onTriage, forecast: onForecast, categories: onCategories, rules: onRules, accounts: onAccounts };
   return (
     <header className="topbar">
       <div className="brand">
@@ -65,6 +69,18 @@ export function TopBar({
           </button>
         )}
       </div>
+      <nav className="topbar-actions" aria-label="Views">
+        {VIEW_BUTTONS.map(({ view: target, label }) => (
+          <button
+            className={view === target ? "view-link active" : "view-link"}
+            key={target}
+            aria-pressed={view === target}
+            onClick={handlers[target]}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
       <div className="topbar-controls">
         <nav className="account-tabs" aria-label="Finance type">
           {ACCOUNT_TYPES.map((kind) => (
@@ -94,18 +110,6 @@ export function TopBar({
           </nav>
         )}
       </div>
-      <nav className="account-tabs topbar-actions" aria-label="Views">
-        {VIEW_BUTTONS.map(({ view: target, label }) => (
-          <button
-            className={view === target ? "account-tab active" : "account-tab"}
-            key={target}
-            aria-pressed={view === target}
-            onClick={handlers[target]}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
     </header>
   );
 }

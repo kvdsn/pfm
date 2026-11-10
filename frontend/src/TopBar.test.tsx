@@ -1,9 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TopBar, type View } from "./TopBar";
 
-const renderBar = (view: View) =>
+const renderBar = (view: View, onOverview = vi.fn()) =>
   render(
     <TopBar
       accountType="personal"
@@ -13,6 +13,7 @@ const renderBar = (view: View) =>
       onYear={vi.fn()}
       onAccounts={vi.fn()}
       view={view}
+      onOverview={onOverview}
       onTriage={vi.fn()}
       onRules={vi.fn()}
       onCategories={vi.fn()}
@@ -23,17 +24,22 @@ const renderBar = (view: View) =>
 describe("TopBar views", () => {
   afterEach(cleanup);
 
-  it("lists the five views in order and marks the active one", () => {
+  it("lists Overview and the five views in order and marks the active one", () => {
     renderBar("rules");
     const buttons = within(screen.getByRole("navigation", { name: "Views" })).getAllByRole("button");
-    expect(buttons.map((button) => button.textContent)).toEqual(["Triage", "Forecast", "Categories", "Rules", "Accounts"]);
-    expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "false", "true", "false"]);
+    expect(buttons.map((button) => button.textContent)).toEqual(["Overview", "Triage", "Forecast", "Categories", "Rules", "Accounts"]);
+    expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "false", "false", "true", "false"]);
   });
 
-  it("marks no view active on the overview", () => {
+  it("marks only Overview active on the overview, and Overview returns to it", () => {
+    const onOverview = vi.fn();
+    renderBar("rules", onOverview);
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(onOverview).toHaveBeenCalledTimes(1);
+    cleanup();
     renderBar("overview");
     const buttons = within(screen.getByRole("navigation", { name: "Views" })).getAllByRole("button");
-    expect(buttons.every((button) => button.getAttribute("aria-pressed") === "false")).toBe(true);
+    expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false", "false", "false"]);
   });
 });
 
