@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, type AccountOverview, type ImportRecord, type Statement } from "./types";
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, type AccountOverview, type BalanceCheck, type ImportRecord, type Statement } from "./types";
 import { api, errorMessage } from "./api";
 import { money } from "./format";
 import { useArrowSelection } from "./hooks";
@@ -153,6 +153,7 @@ function AccountDetails({ account, flow, reloads, onUndo }: {
         <h3>{account.label}</h3>
       </div>
       <p className="impact-summary">{account.masked}</p>
+      {account.kind === "bank" && <BalanceWarnings check={account.balance_check} />}
       {account.kind === "card" ? <CardStatements account={account} flow={flow} reloads={reloads} onUndo={onUndo} /> : (
         <>
           <h4 className="category-details-subheading">Imports</h4>
@@ -171,6 +172,32 @@ function AccountDetails({ account, flow, reloads, onUndo }: {
         </>
       )}
     </aside>
+  );
+}
+
+const MAX_SHOWN_GAPS = 3;
+
+/** Quiet warnings from the balance check; nothing when there are no gaps and nothing unchecked. */
+function BalanceWarnings({ check }: { check?: BalanceCheck | null }) {
+  if (!check || (!check.gaps.length && !check.unchecked)) return null;
+  const shown = check.gaps.slice(0, MAX_SHOWN_GAPS);
+  const more = check.gaps.length - shown.length;
+  return (
+    <div className="balance-check">
+      {shown.map((gap) => (
+        <p className="plan-warning small" key={gap.before}>
+          {gap.after
+            ? `Transactions may be missing between ${gap.after} and ${gap.before}`
+            : `Transactions may be missing before ${gap.before}`}
+        </p>
+      ))}
+      {more > 0 && <p className="plan-warning small">and {more} more</p>}
+      {check.unchecked > 0 && (
+        <p className="muted small">
+          {check.unchecked} {check.unchecked === 1 ? "transaction has" : "transactions have"} no balance to check
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -279,7 +306,10 @@ export function AccountsView({
                         <span className="nowrap">{account.last_date ?? "—"}</span>
                         {age > STALE_AFTER_DAYS && <span className="muted small stale-age"> {age} days ago</span>}
                       </td>
-                      <td className="numeric">{money(account.latest_balance)}</td>
+                      <td className="numeric">
+                        {money(account.latest_balance)}
+                        {account.balance_check?.gaps.length ? <span className="plan-warning" title="Transactions may be missing"> !</span> : null}
+                      </td>
                       <td>{account.last_import_at ? new Date(account.last_import_at).toLocaleString() : "—"}</td>
                     </tr>
                   );

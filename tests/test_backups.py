@@ -29,6 +29,13 @@ class BackupTests(unittest.TestCase):
             fake.now.return_value = moment
             return core.backup_database(self.database, label)
 
+    def test_a_backup_that_fails_its_check_is_removed(self):
+        backup_dir = self.folder / "backups"
+        with patch("backend.pfm.core.database._quick_check", return_value="database disk image is malformed"):
+            with self.assertRaisesRegex(RuntimeError, "integrity check"):
+                core.backup_database(self.database, "x", backup_dir)
+        self.assertEqual(list(backup_dir.glob("*.sqlite3")), [])
+
     def test_backup_without_label_keeps_the_existing_name(self):
         path = self.backup_at(datetime(2026, 10, 17, 18, 24, 20))
         self.assertEqual(path.name, "finance-backup-20261017-182420.sqlite3")

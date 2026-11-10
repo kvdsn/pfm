@@ -29,15 +29,25 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-const renderView = () => {
+const renderView = (now?: Date) => {
   const props = { onNotice: vi.fn(), onError: vi.fn(), onClose: vi.fn(), onRestored: vi.fn().mockResolvedValue(undefined) };
-  render(<BackupsView imports={[]} {...props} />);
+  render(<BackupsView imports={[]} now={now} {...props} />);
   return props;
 };
 
 const backupRows = () => [...screen.getByRole("table").querySelectorAll("tbody tr")];
 
 describe("Backups view", () => {
+  it("warns only when the newest backup is more than 30 days old", async () => {
+    renderView(new Date(2026, 10, 28, 12));
+    expect(await screen.findByText("before rule edits")).toBeInTheDocument();
+    expect(screen.getByText("The latest backup is 42 days old.")).toBeInTheDocument();
+    cleanup();
+    renderView(new Date(2026, 10, 10, 12));
+    expect(await screen.findByText("before rule edits")).toBeInTheDocument();
+    expect(screen.queryByText(/latest backup is/)).not.toBeInTheDocument();
+  });
+
   it("lists backups as returned, with date, note, size, and file name", async () => {
     renderView();
     expect(await screen.findByText("before rule edits")).toBeInTheDocument();

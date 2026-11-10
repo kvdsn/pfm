@@ -18,6 +18,7 @@ from .database import (
     require_account_type,
 )
 from .parsing import parse_export, pending_fingerprints, transaction_fingerprint
+from .reports import CHAIN_ORDER_NEWEST_FIRST_SQL, CHAIN_ROWS_SQL
 from .rules import account_rules, classify, matching_rule, rule_values
 from .source_files import move_account_folder, save_source_file
 from .statements import refresh_card_settlements, remove_empty_statements, store_statements
@@ -45,6 +46,64 @@ def accounts_list(database_path: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _balance_checks(db: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+    """Order-free balance check of every bank account, by account id.
+
+    A row is linked when its balance before the row (balance minus amount) is the balance of another row of the
+    account. Every unlinked row except the earliest one marks a place where transactions are missing before it.
+    Soft-deleted rows are part of the chain; rows without a balance cannot be checked and are only counted."""
+    rows = db.execute(
+        """
+        SELECT t.account_id, t.booking_date, t.balance_cents, t.amount_cents, t.deleted_at
+        FROM transactions t JOIN accounts a ON a.id = t.account_id
+        WHERE a.kind = 'bank' AND t.balance_cents IS NOT NULL
+        ORDER BY t.account_id, t.booking_date, t.import_id, t.row_number DESC
+        """
+    ).fetchall()
+    unchecked = {
+        row["account_id"]: row["n"]
+        for row in db.execute(
+            """
+            SELECT t.account_id, COUNT(*) AS n FROM transactions t JOIN accounts a ON a.id = t.account_id
+            WHERE a.kind = 'bank' AND t.deleted_at IS NULL AND t.balance_cents IS NULL GROUP BY t.account_id
+            """
+        )
+    }
+    by_account: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        by_account.setdefault(row["account_id"], []).append(row)
+    checks: dict[int, dict[str, Any]] = {}
+    for account in db.execute("SELECT id FROM accounts WHERE kind = 'bank'"):
+        account_id = account["id"]
+        account_rows = by_account.get(account_id, [])
+        counts: dict[int, int] = {}
+        for row in account_rows:
+            counts[row["balance_cents"]] = counts.get(row["balance_cents"], 0) + 1
+        gaps: list[dict[str, Any]] = []
+        started = False
+        for row in account_rows:
+            before = row["balance_cents"] - row["amount_cents"]
+            if counts.get(before, 0) - (1 if before == row["balance_cents"] else 0) > 0:
+                continue
+            # The earliest unlinked row is where the account's history starts. It need not be the first row by
+            # date: a row booked late can carry an earlier date than the row the bank listed first.
+            if not started:
+                started = True
+                continue
+            if row["deleted_at"] is not None:
+                continue
+            earlier = [
+                other["booking_date"]
+                for other in account_rows
+                if other["deleted_at"] is None and other["booking_date"] < row["booking_date"]
+            ]
+            gap = {"before": row["booking_date"], "after": max(earlier) if earlier else None}
+            if gap not in gaps:
+                gaps.append(gap)
+        checks[account_id] = {"gaps": gaps, "unchecked": unchecked.get(account_id, 0)}
+    return checks
+
+
 def account_overview(database_path: Path) -> list[dict[str, Any]]:
     """Every account of every entity with the period its active transactions cover, for the accounts view, each with its imports, newest first."""
     with connect(database_path) as db:
@@ -59,19 +118,20 @@ def account_overview(database_path: Path) -> list[dict[str, Any]]:
                 """
             )
         }
-        # The newest balance is the latest balance date, and within a day the first row of the export.
+        # The newest balance is that of the last row in chain order (see reports.CHAIN_ROWS_SQL).
         balances = {
             row["account_id"]: row["balance_cents"]
             for row in db.execute(
-                """
+                f"""
                 SELECT account_id, balance_cents FROM (
                     SELECT account_id, balance_cents,
-                           ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY balance_date DESC, import_id DESC, row_number ASC) AS rank
-                    FROM transactions WHERE deleted_at IS NULL AND balance_cents IS NOT NULL
+                           ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY {CHAIN_ORDER_NEWEST_FIRST_SQL}) AS rank
+                    FROM {CHAIN_ROWS_SQL}
                 ) WHERE rank = 1
                 """
             )
         }
+        balance_checks = _balance_checks(db)
         last_imports = {
             row["account_id"]: row["imported_at"]
             for row in db.execute("SELECT account_id, MAX(imported_at) AS imported_at FROM imports GROUP BY account_id")
@@ -91,6 +151,7 @@ def account_overview(database_path: Path) -> list[dict[str, Any]]:
             "first_date": spans[account["id"]]["first_date"] if account["id"] in spans else None,
             "last_date": spans[account["id"]]["last_date"] if account["id"] in spans else None,
             "latest_balance": format_money(balances.get(account["id"])),
+            "balance_check": balance_checks.get(account["id"]),
             "last_import_at": last_imports.get(account["id"]),
             "imports": imports.get(account["id"], []),
         }

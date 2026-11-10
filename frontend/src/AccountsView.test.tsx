@@ -217,4 +217,31 @@ describe("AccountsView", () => {
     expect(within(table).getByText("No payment found")).toHaveClass("statement-unpaid");
     expect(screen.getByRole("heading", { name: "Statements and imports" })).toBeInTheDocument();
   });
+
+  it("warns about gaps and rows without a balance only when there are some", async () => {
+    const check = (gaps: { before: string; after: string | null }[], unchecked: number) => {
+      apiMock.mockImplementation(async (url: string) => (url.endsWith("/statements") ? [] : [
+        account(1, { imports: [record(1)], balance_check: { gaps, unchecked } }),
+      ]));
+    };
+    check([], 0);
+    renderView();
+    await screen.findByText("KBC · account");
+    expect(detailsPane().textContent).not.toMatch(/missing|no balance/);
+    cleanup();
+
+    check([
+      { before: "2026-01-29", after: "2026-01-27" }, { before: "2026-02-10", after: null },
+      { before: "2026-03-01", after: "2026-02-20" }, { before: "2026-04-01", after: "2026-03-20" },
+      { before: "2026-05-01", after: "2026-04-20" },
+    ], 1);
+    renderView();
+    await screen.findByText("KBC · account");
+    const text = detailsPane().textContent ?? "";
+    expect(text).toContain("Transactions may be missing between 2026-01-27 and 2026-01-29");
+    expect(text).toContain("Transactions may be missing before 2026-02-10");
+    expect(text).not.toContain("2026-04-01");
+    expect(text).toContain("and 2 more");
+    expect(text).toContain("1 transaction has no balance to check");
+  });
 });

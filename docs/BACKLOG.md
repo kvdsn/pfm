@@ -12,3 +12,8 @@ Ideas for later, in priority order. Remove an item once it is built.
    - the salary
    - the reimbursements
 6. **Import reminders tied to the forecast:** when the latest import is older than an expected payment, say "import to confirm" instead of assuming the payment is still to come.
+7. **Import coverage timeline:** per account, show which date ranges the imports cover and where the gaps are.
+8. **Split transactions:** divide one payment over two categories, or mark a private share of a business cost.
+9. **Rule suggestions from manual edits:** when the same merchant has been categorized by hand several times, offer the rule in Triage.
+10. **Card spending not yet settled:** count the purchases since the last card statement as money the forecast still has to pay.
+11. **Anomaly flags:** flag a recurring payment that is missing, doubled or changed in amount as a follow-up.

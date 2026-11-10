@@ -129,6 +129,13 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(client.get("/api/backups").json(), [created.json()])
         self.assertEqual(list(self.database.parent.glob("finance-backup-*")), [])
 
+    def test_a_failed_backup_check_answers_500_with_a_readable_detail(self):
+        with patch("backend.pfm.core.database._quick_check", return_value="malformed"):
+            response = self.client.post("/api/backups", json={"label": "x"})
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("integrity check", response.json()["detail"])
+        self.assertEqual(self.client.get("/api/backups").json(), [])
+
     def test_backups_can_be_created_and_listed(self):
         self.assertEqual(self.client.get("/api/backups").json(), [])
         self.import_csv([transaction(ACCOUNT, "01/05/2026", "-10,00", "90,00", "Shop")])

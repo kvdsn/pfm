@@ -237,7 +237,7 @@ def list_transactions(
     elif search.text:
         sql += f" AND {text_sql}"
         params.extend(text_params)
-    order = "t.booking_date DESC, t.row_number ASC"
+    order = "t.booking_date DESC, t.import_id DESC, t.row_number ASC"
     if follow_up == "open":
         order = "t.booking_date ASC, t.id ASC"
     elif follow_up == "done":

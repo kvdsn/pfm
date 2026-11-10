@@ -59,26 +59,57 @@ class _AccountBalances:
         return self.balances[index - 1] if index else self.opening
 
 
+# The chain order of an account's rows with a balance. Within one bank export the file order is the bank's
+# running-balance order: row_number 1 is the newest row, and from the highest row_number down to 1 each row's
+# balance minus its amount equals the previous row's balance. A file is not sorted by date, though (a row dated
+# the 20th can follow rows dated the 21st when it was booked late), so the order is taken from the file, not
+# from the dates. `m` is the running maximum of balance_date in file order within the import: within one import
+# it follows the file exactly, imports interleave by date, and a day shared by two imports goes to the later one.
+# Use CHAIN_ROWS_SQL as the table and CHAIN_ORDER_SQL as the ORDER BY (reversed: the newest row is last).
+CHAIN_ROWS_SQL = """(
+    SELECT t.*, MAX(t.balance_date) OVER (
+        PARTITION BY t.account_id, t.import_id ORDER BY t.row_number DESC ROWS UNBOUNDED PRECEDING
+    ) AS m
+    FROM transactions t WHERE t.deleted_at IS NULL AND t.balance_cents IS NOT NULL
+)"""
+CHAIN_ORDER_SQL = "m, import_id, row_number DESC"
+CHAIN_ORDER_NEWEST_FIRST_SQL = "m DESC, import_id DESC, row_number ASC"
+
+
 def _account_balances(db: sqlite3.Connection, account_type: str) -> list[_AccountBalances]:
+    """Balances by booking date: the closing balance of a day is the opening balance plus everything booked up
+    to that day. Each row's effective amount is its balance minus the previous row's in chain order, so a real
+    gap in the data shows as a jump on the date of the first row after it."""
     rows = db.execute(
-        """
-        SELECT a.id AS account_id, a.iban, t.balance_date, t.balance_cents, t.source_amount_cents
-        FROM transactions t JOIN accounts a ON a.id = t.account_id
-        WHERE a.account_type = ? AND t.deleted_at IS NULL AND t.balance_cents IS NOT NULL
-        ORDER BY a.id, t.balance_date, t.import_id, t.row_number DESC
+        f"""
+        SELECT t.account_id, a.iban, t.balance_date, t.balance_cents, t.source_amount_cents
+        FROM {CHAIN_ROWS_SQL} t JOIN accounts a ON a.id = t.account_id
+        WHERE a.account_type = ?
+        ORDER BY t.account_id, {CHAIN_ORDER_SQL}
         """,
         (account_type,),
     ).fetchall()
-    accounts: dict[int, _AccountBalances] = {}
+    chains: dict[int, list[sqlite3.Row]] = {}
     for row in rows:
-        account = accounts.get(row["account_id"])
-        if account is None:
-            account = accounts[row["account_id"]] = _AccountBalances(
-                iban=row["iban"], opening=row["balance_cents"] - row["source_amount_cents"]
-            )
-        account.dates.append(row["balance_date"])
-        account.balances.append(row["balance_cents"])
-    return list(accounts.values())
+        chains.setdefault(row["account_id"], []).append(row)
+    result: list[_AccountBalances] = []
+    for chain in chains.values():
+        first = chain[0]
+        opening = first["balance_cents"] - first["source_amount_cents"]
+        entries: list[tuple[str, int]] = []
+        previous = opening
+        for row in chain:
+            entries.append((row["balance_date"], row["balance_cents"] - previous))
+            previous = row["balance_cents"]
+        entries.sort(key=lambda entry: entry[0])  # stable: chain order within a day
+        account = _AccountBalances(iban=first["iban"], opening=opening)
+        running = opening
+        for day, amount in entries:
+            running += amount
+            account.dates.append(day)
+            account.balances.append(running)
+        result.append(account)
+    return result
 
 
 def _month_end(month: str) -> str:

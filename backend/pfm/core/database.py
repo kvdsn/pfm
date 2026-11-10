@@ -357,6 +357,7 @@ def backup_database(database_path: Path, label: str = "", backup_dir: Optional[P
 
     The folder defaults to default_backup_dir and is created if missing.
     Never overwrites: a backup made in the same second as another gets -2, -3, ... appended.
+    The copy is checked with PRAGMA quick_check; a bad copy is deleted and RuntimeError raised.
     """
     backup_dir = backup_dir or default_backup_dir(database_path)
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -371,7 +372,21 @@ def backup_database(database_path: Path, label: str = "", backup_dir: Optional[P
         counter += 1
     with closing(sqlite3.connect(database_path)) as source, closing(sqlite3.connect(target)) as copy:
         source.backup(copy)
+    result = _quick_check(target)
+    if result != "ok":
+        target.unlink(missing_ok=True)
+        raise RuntimeError(f"The new backup failed its integrity check ({result}) and was removed")
     return target
+
+
+def _quick_check(path: Path) -> str:
+    """The result of PRAGMA quick_check on a database file opened read-only, or the error text."""
+    try:
+        # immutable: a backup is opened read-only, which fails on WAL files without it.
+        with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro&immutable=1", uri=True)) as check:
+            return str(check.execute("PRAGMA quick_check").fetchone()[0])
+    except sqlite3.Error as error:
+        return str(error)
 
 
 def _slugify(label: str) -> str:

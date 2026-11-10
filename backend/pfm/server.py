@@ -469,7 +469,11 @@ def create_app(database_path: Optional[Path] = None, frontend_dist: Path = FRONT
             raise HTTPException(status_code=400, detail="That note is not an automatic backup note")
         if not payload.automatic and core.is_reserved_note(payload.label):
             raise HTTPException(status_code=400, detail="That note is reserved for automatic backups")
-        name = core.backup_database(database_path, payload.label, backup_dir).name
+        try:
+            name = core.backup_database(database_path, payload.label, backup_dir).name
+        except Exception as error:
+            logger.exception("Could not create a backup")
+            raise HTTPException(status_code=500, detail=f"Could not create the backup: {error}") from error
         if payload.automatic:
             prune_backups()
         return next(item for item in core.list_backups(database_path, backup_dir) if item["name"] == name)

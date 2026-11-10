@@ -3,6 +3,8 @@ import type { Backup, ImportRecord } from "./types";
 import { api, errorMessage } from "./api";
 import { useArrowSelection, useSignal } from "./hooks";
 
+const STALE_BACKUP_DAYS = 30;
+
 /** The full-page backups view: lists every database backup and makes a new one, optionally with a short note in its name. */
 export function BackupsView({
   imports,
@@ -12,7 +14,10 @@ export function BackupsView({
   onClose,
   newItemSignal = 0,
   active = true,
+  now = new Date(),
 }: {
+  /** The current moment, injectable for tests. */
+  now?: Date;
   /** Whether the arrow keys move through the backups; the Accounts page shares them with its accounts. */
   active?: boolean;
   /** Focuses the note field each time this counter changes, such as from a keyboard shortcut. */
@@ -81,6 +86,9 @@ export function BackupsView({
     }
   };
 
+  const newest = backups[0];
+  const newestAge = newest ? Math.floor((now.getTime() - new Date(newest.created_at).getTime()) / 86_400_000) : 0;
+
   return (
     <div className="rules-view single-pane">
       <section className="panel rules-pane" aria-label="Backups">
@@ -105,6 +113,7 @@ export function BackupsView({
         <p className="muted small">
           The app backs up automatically before imports, restores, and other bulk changes, and keeps the latest 20 of those; backups you make are kept until you delete them. Restoring replaces your current data after backing it up first.
         </p>
+        {newestAge > STALE_BACKUP_DAYS && <p className="muted small">The latest backup is {newestAge} days old.</p>}
         <div className="table-scroll">
           <table className="rules-table backups-table">
             <thead>

@@ -85,9 +85,9 @@ The **Forecast** page holds what the projection is based on:
 
 ### Accounts and backups
 
-**Accounts** lists every account and card per entity, with its transaction count, latest balance and last import. When the latest transaction is more than 35 days old, it shows a reminder that a new export is due.
+**Accounts** lists every account and card per entity, with its transaction count, latest balance and last import, and flags bank accounts whose balances suggest missing transactions. When the latest transaction is more than 35 days old, it shows a reminder that a new export is due.
 
-The **Backups** section below it makes a backup on demand and restores any backup, first backing up the current data. The app also backs up before risky actions, such as undoing an import or merging categories, and keeps the latest 20 automatic backups. It never deletes the ones you make. To restore by hand, quit the app and copy a backup over `finance.sqlite3`.
+The **Backups** section below it makes a backup on demand (each is checked when made, and a warning shows when the newest is over 30 days old) and restores any backup, first backing up the current data. The app also backs up before risky actions, such as undoing an import or merging categories, and keeps the latest 20 automatic backups. It never deletes the ones you make. To restore by hand, quit the app and copy a backup over `finance.sqlite3`.
 
 ## Development
 

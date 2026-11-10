@@ -1,19 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AccountType,
   Annotation,
   FollowUpFilter,
-  BalanceHistory,
-  Budget,
-  Category,
   FlowType,
-  Forecast,
-  ForecastVsActual,
-  ImportRecord,
   SelectedCategory,
   SimilarTransactions,
-  PartialSummary,
-  Summary,
   Transaction,
 } from "./types";
 import { ACCOUNT_TYPES } from "./types";
@@ -27,6 +19,9 @@ import { TriageView } from "./TriageView";
 import { RecurringView } from "./RecurringView";
 import { PlanView } from "./PlanView";
 import { forecastOnlyYears } from "./forecast";
+import {
+  useBalanceHistory, useBudgets, useForecastVsActual, useReport, useTransactions, yearsOf,
+} from "./dataHooks";
 import { Toast, useToast } from "./Toast";
 import { Dialog } from "./Dialog";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -40,8 +35,6 @@ import { YearOverview } from "./YearOverview";
 import { defaultSort, nextSort, sortTransactions, type SortKey, type TransactionSort } from "./transactionSort";
 
 const UNCATEGORIZED = "Uncategorized";
-const TRANSACTION_PAGE_SIZE = 1000;
-
 const SHOW_FORECAST_KEY = "pfm.showForecast";
 /** The remembered forecast switch; on unless turned off, and on when storage is unavailable. */
 const readShowForecast = () => {
@@ -59,41 +52,18 @@ const writeShowForecast = (shown: boolean) => {
   }
 };
 
-/** Distinct years of the given YYYY-MM months, oldest first. */
-const yearsOf = (months: string[]) => [...new Set(months.map((month) => month.slice(0, 4)))].sort();
-
-/** An entity's forecast; null when the server has none (an older server answers with something else). */
-const fetchForecast = (accountType: AccountType) =>
-  api<Forecast>(`/api/forecast?account_type=${accountType}`)
-    .then((forecast) => (Array.isArray(forecast?.months) ? forecast : null), () => null);
-
-/** The forecast-versus-actual comparison of Personal or Business; null when the server has none (an older server). */
-const fetchForecastVsActual = (accountType: AccountType) =>
-  api<ForecastVsActual>(`/api/forecast/vs-actual?account_type=${accountType}`)
-    .then((vs) => (Array.isArray(vs?.months) && vs.summary ? vs : null), () => null);
-
 export function App() {
   const [accountType, setAccountType] = useState<AccountType>("personal");
-  const [summaries, setSummaries] = useState<Summary[]>([]);
-  const [previousYearToDate, setPreviousYearToDate] = useState<PartialSummary | null>(null);
-  const [months, setMonths] = useState<string[]>([]);
-  /** The forecast of one entity; it only counts while that entity is the active one. */
-  const [loadedForecast, setLoadedForecast] = useState<Forecast | null>(null);
-  /** The forecast-versus-actual comparison of one entity; it only counts while that entity is the active one. */
-  const [loadedVsActual, setLoadedVsActual] = useState<ForecastVsActual | null>(null);
+  const { toast, setNotice, setError, dismiss: dismissToast } = useToast();
   const [year, setYear] = useState("");
-  const [categories, setCategories] = useState<Category[]>([]);
-  /** Budgets loaded for one entity and year; they only count while that is still the selection. */
-  const [loadedBudgets, setLoadedBudgets] = useState<{ key: string; items: Budget[] }>({ key: "", items: [] });
-  const [imports, setImports] = useState<ImportRecord[]>([]);
-  const [loadedTransactions, setTransactions] = useState<Transaction[]>([]);
-  const [totalTransactions, setTotalTransactions] = useState(0);
+  const { summaries, previousYearToDate, months, loadedForecast, categories, imports, refresh, reloadForecast } =
+    useReport(accountType, setYear, setError);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<SelectedCategory | null>(null);
   /** The year's transactions, or the open or done follow-ups of all years. */
   const [followUpFilter, setFollowUpFilter] = useState<FollowUpFilter>("all");
-  /** The entity's open follow-ups, from the last transactions request; null when the server does not report it. */
-  const [openFollowUps, setOpenFollowUps] = useState<number | null>(null);
+  const { loadedTransactions, setTransactions, totalTransactions, openFollowUps, setOpenFollowUps, loadTransactions } =
+    useTransactions(accountType, year, search, followUpFilter, selectedCategory, setError);
   /** The sort picked from the table header, for the follow-up filter it was picked in; another filter starts in its own order. */
   const [sortChoice, setSortChoice] = useState<{ filter: FollowUpFilter; sort: TransactionSort } | null>(null);
   const chosenSort = sortChoice?.filter === followUpFilter ? sortChoice.sort : null;
@@ -121,7 +91,6 @@ export function App() {
   /** The row to select once the list reloads after a category change. */
   const pendingAdvance = useRef<{ nextId: number | null; index: number } | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
-  const [balanceHistory, setBalanceHistory] = useState<BalanceHistory | null>(null);
   const [balanceHistoryVersion, setBalanceHistoryVersion] = useState(0);
   const [showBalanceHistory, setShowBalanceHistory] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -137,7 +106,6 @@ export function App() {
   const [openedRuleId, setOpenedRuleId] = useState<number | undefined>();
   /** Raised by the N shortcut; the current full-page view starts a new item when it changes. */
   const [newItemSignal, setNewItemSignal] = useState(0);
-  const { toast, setNotice, setError, dismiss: dismissToast } = useToast();
   const transactionSearchInput = useRef<HTMLInputElement>(null);
   const transactionRowRefs = useRef(new Map<number, HTMLTableRowElement>());
   const noteInput = useRef<HTMLInputElement>(null);
@@ -153,17 +121,8 @@ export function App() {
   });
   // With projections off, everything renders as it does without a forecast; the Plan view keeps its own.
   const shownForecast = showForecast ? forecast : null;
-  const vsActual = showForecast && loadedVsActual?.account_type === accountType ? loadedVsActual : null;
   // The comparison follows the forecast: computing the forecast is what saves the month's snapshot. Kids has none.
-  useEffect(() => {
-    if (!showForecast || accountType === "kids" || !loadedForecast) {
-      setLoadedVsActual(null);
-      return;
-    }
-    let current = true;
-    void fetchForecastVsActual(accountType).then((next) => { if (current) setLoadedVsActual(next); });
-    return () => { current = false; };
-  }, [accountType, showForecast, loadedForecast]);
+  const vsActual = useForecastVsActual(accountType, showForecast, loadedForecast);
   /** Which recurring item the Forecast page's comparison asked to open; the nonce makes a repeated request count. */
   const [recurringTarget, setRecurringTarget] = useState<{ id: number | null; nonce: number } | null>(null);
   const reportYears = useMemo(() => yearsOf(months), [months]);
@@ -192,7 +151,6 @@ export function App() {
     }
     return counts;
   }, [yearSummaries]);
-  const budgets = loadedBudgets.key === `${accountType}\u0000${year}` ? loadedBudgets.items : [];
   /** Each category's total in the selected year in euros, net of refunds; Uncategorized has no budget and is left out. */
   const yearCategoryTotals = useMemo(() => {
     const cents = new Map<number, number>();
@@ -214,85 +172,6 @@ export function App() {
     category.id !== uncategorizedId && !yearCategoryCounts.has(category.id));
   const hasYearData = yearSummaries.length > 0 || forecastYears.includes(year);
   const editingTransaction = transactions.find((transaction) => transaction.id === editingId);
-
-  const refreshRequest = useRef(0);
-  const transactionsRequest = useRef(0);
-  const refresh = useCallback(async () => {
-    const request = ++refreshRequest.current;
-    setError("");
-    try {
-      const [report, nextCategories, nextImports, nextForecast] = await Promise.all([
-        api<{ months: string[]; summaries: Summary[]; previous_year_to_date?: PartialSummary | null }>(
-          `/api/report?account_type=${accountType}`,
-        ),
-        api<Category[]>(`/api/categories?account_type=${accountType}`),
-        api<ImportRecord[]>(`/api/imports?account_type=${accountType}`),
-        fetchForecast(accountType),
-      ]);
-      if (request !== refreshRequest.current) return null;
-      setLoadedForecast(nextForecast);
-      setMonths(report.months);
-      setSummaries(report.summaries);
-      setPreviousYearToDate(report.previous_year_to_date ?? null);
-      setCategories(nextCategories);
-      setImports(nextImports);
-      const reported = yearsOf(report.months);
-      const available = [...reported, ...forecastOnlyYears(nextForecast, reported)];
-      setYear((current) => (available.includes(current) ? current : reported.at(-1) || ""));
-      return report;
-    } catch (cause) {
-      if (request !== refreshRequest.current) return null;
-      setError(errorMessage(cause, "Could not load reports"));
-      return null;
-    }
-  }, [accountType]);
-
-  const loadTransactions = useCallback(async (overrideYear?: string) => {
-    const request = ++transactionsRequest.current;
-    const effectiveYear = overrideYear ?? year;
-    if (!effectiveYear) {
-      setTransactions([]);
-      setTotalTransactions(0);
-      return;
-    }
-    const params = new URLSearchParams({ account_type: accountType, year: effectiveYear, q: search });
-    if (followUpFilter !== "all") params.set("follow_up", followUpFilter);
-    else if (selectedCategory) {
-      if (selectedCategory.flow_type !== "own_transfer") {
-        params.set("category_id", String(selectedCategory.category_id ?? "uncategorized"));
-      }
-      params.set("flow_type", selectedCategory.flow_type);
-    }
-    try {
-      const items: Transaction[] = [];
-      let total = 0;
-      let openCount: number | null = null;
-      do {
-        params.set("limit", String(TRANSACTION_PAGE_SIZE));
-        params.set("offset", String(items.length));
-        const page = await api<{ total: number; items: Transaction[]; open_follow_ups?: number }>(`/api/transactions?${params}`);
-        if (request !== transactionsRequest.current) return;
-        total = page.total;
-        openCount = page.open_follow_ups ?? null;
-        if (page.items.length === 0 && items.length < total) {
-          throw new Error("Could not load all matching transactions.");
-        }
-        // An older server sends no annotation fields; they mean no note and no follow-up.
-        items.push(...page.items.map((item) => ({ ...item, note: item.note ?? "", follow_up: item.follow_up ?? null, follow_up_at: item.follow_up_at ?? null })));
-      } while (items.length < total);
-      setTransactions(items);
-      setTotalTransactions(total);
-      setOpenFollowUps(openCount);
-    } catch (cause) {
-      if (request !== transactionsRequest.current) return;
-      setError(errorMessage(cause, "Could not load transactions"));
-    }
-  }, [accountType, followUpFilter, search, selectedCategory, year]);
-
-  /** Reload the forecast after a change in the Plan or Recurring view. */
-  const reloadForecast = useCallback(async () => {
-    setLoadedForecast(await fetchForecast(accountType));
-  }, [accountType]);
 
   /** Reload everything and show the latest year, after imports change the data. */
   const reloadToLatestYear = async () => {
@@ -353,33 +232,8 @@ export function App() {
     void loadTransactions();
   }, [loadTransactions]);
 
-  useEffect(() => {
-    // A forecast year has no history to load; the graph draws the forecast alone.
-    if (!year || forecastYears.includes(year)) {
-      setBalanceHistory(null);
-      return;
-    }
-    let current = true;
-    api<BalanceHistory>(`/api/balance-history?account_type=${accountType}&year=${year}`)
-      .then((history) => current && setBalanceHistory(history))
-      .catch((cause) => current && setError(errorMessage(cause, "Could not load balance history")));
-    return () => {
-      current = false;
-    };
-  }, [accountType, balanceHistoryVersion, forecastYears, year]);
-
-  // A server without budgets answers with the app page instead of JSON; that is the same as having none.
-  useEffect(() => {
-    let current = true;
-    if (!year) return;
-    const key = `${accountType}\u0000${year}`;
-    api<Budget[]>(`/api/budgets?account_type=${accountType}&year=${year}`)
-      .then((items) => (Array.isArray(items) ? items : []), () => [])
-      .then((items) => current && setLoadedBudgets({ key, items }));
-    return () => {
-      current = false;
-    };
-  }, [accountType, balanceHistoryVersion, year]);
+  const balanceHistory = useBalanceHistory(accountType, year, forecastYears, balanceHistoryVersion, setError);
+  const budgets = useBudgets(accountType, year, balanceHistoryVersion);
 
   useEffect(() => {
     const visible = (id: number | null) => id !== null && transactions.some((transaction) => transaction.id === id);

@@ -229,6 +229,11 @@ export type UncategorizedGroup = {
   merchant_rule_matches: number;
 };
 /** One row of the accounts view: an account or card with the period its active transactions cover. */
+/** Places where an account's running balances jump, and how many rows have no balance to check. */
+export type BalanceCheck = {
+  gaps: { before: string; after: string | null }[];
+  unchecked: number;
+};
 export type AccountOverview = {
   id: number;
   account_type: AccountType;
@@ -241,6 +246,8 @@ export type AccountOverview = {
   last_date: string | null;
   latest_balance: string | null;
   last_import_at: string | null;
+  /** Bank accounts only (null for cards): where the balances show transactions may be missing. Absent on an older server. */
+  balance_check?: BalanceCheck | null;
   /** The account's imports, newest first. Absent when the server predates the field. */
   imports?: ImportRecord[];
 };

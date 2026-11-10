@@ -6,6 +6,7 @@ stay stored and available unchanged.
 """
 
 import re
+from functools import lru_cache
 from typing import Optional
 
 _SPACES = re.compile(r"\s+")
@@ -157,6 +158,9 @@ def _split_iban(text: str, name: str) -> tuple[str, str]:
     return (match.group(1), match.group(2)) if match else ("", text)
 
 
+# Every list, rule preview and forecast summarizes each transaction again; the result only depends on these texts,
+# so it is remembered for as long as the server runs. A restart, which a code change needs anyway, clears it.
+@lru_cache(maxsize=65536)
 def summarize(merchant: str, description: str, memo: str, bank: str = "") -> tuple[str, str]:
     """A short name for the counterparty and one line of detail, from the original texts."""
     merchant, description, memo = _clean(merchant), _clean(description), _clean(memo)

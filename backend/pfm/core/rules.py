@@ -10,7 +10,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from typing import Any, Optional
 
 from .describe import summarize
@@ -34,6 +34,18 @@ RULE_FIELDS = ("merchant", "description", "memo")
 def word_pattern(needle: str) -> "re.Pattern[str]":
     """Matches the (whitespace-collapsed, casefolded) text where no letter or digit touches it."""
     return re.compile(r"(?<![^\W_])" + re.escape(needle) + r"(?![^\W_])")
+
+
+# Every rule is tried against every transaction, so the compared forms of a text are remembered.
+@lru_cache(maxsize=65536)
+def _folded(text: str) -> str:
+    return text.casefold()
+
+
+@lru_cache(maxsize=65536)
+def _collapsed(text: str) -> str:
+    """Casefolded with runs of whitespace as one space, as word and exact matches compare."""
+    return " ".join(text.casefold().split())
 
 
 def transaction_texts(row: dict[str, Any], bank: str = "") -> dict[str, str]:
@@ -103,19 +115,34 @@ class Rule:
             match_mode=row["match_mode"],
         )
 
-    def matches(self, values: dict[str, str]) -> bool:
+    @cached_property
+    def _needle(self) -> str:
+        """The text as it is compared: casefolded, and for word and exact matches with whitespace collapsed."""
         needle = self.match_text.casefold()
+        return needle if self.match_mode == "contains" else " ".join(needle.split())
+
+    def matches(self, values: dict[str, str]) -> bool:
+        # Plain loops: this runs for every rule against every transaction.
+        needle = self._needle
         if not needle:
             return False
         if self.match_mode == "exact":
-            needle = " ".join(needle.split())
-            return any(" ".join(values[field].casefold().split()) == needle for field in self.match_fields)
+            for field in self.match_fields:
+                if _collapsed(values[field]) == needle:
+                    return True
+            return False
         if self.match_mode == "word":
-            pattern = word_pattern(" ".join(needle.split()))
-            return any(pattern.search(" ".join(values[field].casefold().split())) for field in self.match_fields)
+            pattern = word_pattern(needle)
+            for field in self.match_fields:
+                if pattern.search(_collapsed(values[field])):
+                    return True
+            return False
         if self.legacy_normalized:
             return any(needle in normalize_key(values[field]).casefold() for field in self.match_fields)
-        return any(needle in values[field].casefold() for field in self.match_fields)
+        for field in self.match_fields:
+            if needle in _folded(values[field]):
+                return True
+        return False
 
 
 def account_rules(db: sqlite3.Connection, account_type: str) -> list[Rule]:

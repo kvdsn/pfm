@@ -473,10 +473,10 @@ class FinanceCoreTests(unittest.TestCase):
     def test_reimbursement_and_transfer_reporting_and_original_data(self):
         account = "BE00000000000000000001"
         rows = [
-            transaction(account, "01/05/2026", "1000,00", "1100,00", "Employer", memo="Salary"),
-            transaction(account, "02/05/2026", "-200,00", "900,00", "Shop"),
-            transaction(account, "03/05/2026", "50,00", "950,00", "Clinic", memo="Medical refund"),
             transaction(account, "04/05/2026", "-100,00", "850,00", "Own savings"),
+            transaction(account, "03/05/2026", "50,00", "950,00", "Clinic", memo="Medical refund"),
+            transaction(account, "02/05/2026", "-200,00", "900,00", "Shop"),
+            transaction(account, "01/05/2026", "1000,00", "1100,00", "Employer", memo="Salary"),
         ]
         preview = core.stage_import(self.database, "personal.csv", make_csv(rows).encode(), self.staging)
         core.commit_import(self.database, preview["token"], "personal", self.staging)
@@ -588,8 +588,8 @@ class FinanceCoreTests(unittest.TestCase):
         first_account = "BE00000000000000000001"
         second_account = "BE00000000000000000002"
         first_rows = [
-            transaction(first_account, "01/05/2026", "100,00", "1100,00", "Income"),
             transaction(first_account, "03/05/2026", "-50,00", "1050,00", "Expense"),
+            transaction(first_account, "01/05/2026", "100,00", "1100,00", "Income"),
         ]
         second_rows = [
             transaction(second_account, "02/05/2026", "-200,00", "800,00", "Expense"),
@@ -1254,6 +1254,76 @@ class FinanceCoreTests(unittest.TestCase):
             {"2025-12-29": 11000, "2025-12-30": 10000, "2026-01-01": 15000, "2026-01-02": 12000},
         )
 
+    def _import_personal(self, name, rows):
+        preview = core.stage_import(self.database, name, make_csv(rows).encode(), self.staging)
+        core.commit_import(self.database, preview["token"], "personal", self.staging)
+
+    def _late_booked_file(self, account):
+        # Newest first, as the bank writes it; the row dated the 20th was booked after the 21st.
+        return [
+            transaction(account, "22/01/2026", "-3,00", "73,00", "D"),
+            transaction(account, "20/01/2026", "-7,00", "76,00", "C"),
+            transaction(account, "21/01/2026", "-5,00", "83,00", "B"),
+            transaction(account, "20/01/2026", "-12,00", "88,00", "A"),
+            transaction(account, "19/01/2026", "100,00", "100,00", "Start"),
+        ]
+
+    def test_balances_follow_the_booking_date_when_a_row_was_booked_late(self):
+        self._import_personal("jan.csv", self._late_booked_file("BE00000000000000000001"))
+        points = core.balance_history(self.database, "personal", "2026-01", None)["points"]
+        self.assertEqual(
+            [point["balance"] for point in points[18:22]], ["100.00", "81.00", "76.00", "73.00"]
+        )
+        self.assertEqual(core.account_overview(self.database)[0]["latest_balance"], "73.00")
+
+    def test_late_booked_row_across_a_month_boundary_keeps_the_month_balances(self):
+        account = "BE00000000000000000001"
+        # Newest first; row C, dated 31/01, was booked after the row D dated 01/02.
+        self._import_personal("jan.csv", [
+            transaction(account, "02/02/2026", "-2,00", "88,00", "E"),
+            transaction(account, "31/01/2026", "-4,00", "90,00", "C"),
+            transaction(account, "01/02/2026", "-10,00", "94,00", "D"),
+            transaction(account, "30/01/2026", "-6,00", "104,00", "B"),
+            transaction(account, "29/01/2026", "110,00", "110,00", "Start"),
+        ])
+        report = core.report(self.database, "personal", today=date(2026, 3, 1))
+        january, february = report["summaries"][0], report["summaries"][1]
+        self.assertEqual(january["account_balances"][0]["closing"], "100.00")
+        self.assertEqual(february["account_balances"][0]["opening"], "100.00")
+
+    def test_balance_check_reports_a_hole_in_a_file(self):
+        account = "BE00000000000000000001"
+        self._import_personal("holes.csv", [
+            transaction(account, "05/03/2026", "-1,00", "69,00", "D"),
+            transaction(account, "03/03/2026", "-1,00", "70,00", "C"),
+            transaction(account, "02/03/2026", "-10,00", "90,00", "B"),
+            transaction(account, "01/03/2026", "-10,00", "100,00", "A"),
+        ])
+        [item] = core.account_overview(self.database)
+        self.assertEqual(
+            item["balance_check"],
+            {"gaps": [{"before": "2026-03-03", "after": "2026-03-02"}], "unchecked": 0},
+        )
+
+    def test_balance_check_finds_nothing_in_complete_accounts(self):
+        account = "BE00000000000000000001"
+        self._import_personal("jan.csv", self._late_booked_file(account))
+        [item] = core.account_overview(self.database)
+        self.assertEqual(item["balance_check"], {"gaps": [], "unchecked": 0})
+
+    def test_balance_check_counts_rows_without_a_balance_as_unchecked(self):
+        older = belfius_csv(
+            [
+                {"Boekingsdatum": "30/12/2025", "Valutadatum": "30/12/2025", "Bedrag": "-10,00", "Transactie": "ONE"},
+                {"Boekingsdatum": "29/12/2025", "Valutadatum": "29/12/2025", "Bedrag": "5,00", "Transactie": "TWO"},
+            ],
+            range_end="31/12/2025", saldo="",
+        )
+        preview = core.stage_import(self.database, "older.csv", older, self.staging)
+        core.commit_import(self.database, preview["token"], "personal", self.staging)
+        [item] = core.account_overview(self.database)
+        self.assertEqual(item["balance_check"], {"gaps": [], "unchecked": 2})
+
     def test_remapping_keeps_income_flag_and_clears_rule_links(self):
         account = "BE00000000000000000001"
         rows = [
@@ -1330,8 +1400,8 @@ class FinanceCoreTests(unittest.TestCase):
 
     def test_month_balances_carry_forward_accounts_without_activity(self):
         first = [
-            transaction("BE00000000000000000001", "01/05/2026", "-10,00", "90,00", "Shop"),
             transaction("BE00000000000000000001", "01/06/2026", "-10,00", "80,00", "Shop"),
+            transaction("BE00000000000000000001", "01/05/2026", "-10,00", "90,00", "Shop"),
         ]
         second = [transaction("BE00000000000000000002", "02/05/2026", "-5,00", "495,00", "Cafe")]
         for name, rows in (("first.csv", first), ("second.csv", second)):

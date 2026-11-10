@@ -21,6 +21,7 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
 - **Preview:** the app previews every import and stages it until you confirm. You can import several files at once, and the preview lists them per account.
 - **Duplicates** are skipped by fingerprint, so overlapping exports can be imported freely. The original row data is kept. Belfius adds a statement and transaction number once a transaction is on a statement; a row that differs from an imported one only by these numbers is still a duplicate.
 - **Source copies:** after you confirm, a copy of each file is saved in `source-data/<entity>/<bank> account|card <last 4 digits>/` in the backup folder. The name is the statement's debit date for a card statement, and the booking-date range otherwise. The app never overwrites or duplicates a copy. A failed copy doesn't stop the import. A folder moves with its account when the account changes entity.
+- **Balance check:** the Accounts page checks each bank account's balances. Where a row's balance doesn't follow from any other row's, it warns that transactions may be missing between two dates. It also counts transactions without a balance, which can't be checked. Nothing shows when all is well.
 - **Undo import** removes that import's transactions but keeps account mappings and categories. When those transactions have notes or follow-ups, the confirmation warns that they will be lost.
 
 ## Reports
@@ -34,7 +35,7 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
 - **Transfers between your own accounts** in the same entity are recognized by the counterparty IBAN. They are left out of the totals, shown muted, and summed in a separate row. Transfers between entities count on both sides.
 - **Card statements.** A statement's purchases replace the bank settlement that paid it. The settlement must be in the same entity, within a week of the debit date, and for exactly the amount due. For KBC, it must also name the card's last four digits. A statement whose refunds outweigh its purchases carries its credit over to the next one.
 - **Year table:**
-  - **Columns:** twelve months, total, monthly average and share of the group. Then net change and the latest balance: the sum of each account's last known balance.
+  - **Columns:** twelve months, total, monthly average and share of the group. Then net change and the latest balance: the sum of each account's last known balance. Balances follow the booking date: the balance on a day is the opening balance plus everything booked up to that day, even when the bank listed a late-booked row out of date order.
   - **Compared with last year:** shown when the previous year has data, against the same period of last year. For the current year, that runs up to the day of the latest transaction.
   - **Current month:** highlighted, with future months dimmed.
 - **Budgets.** A category other than Uncategorized can have a yearly budget. The year table then gets a **Left** column:
@@ -117,7 +118,8 @@ The Forecast switch (S) hides all projections from the year table, the graph and
   - before undoing an import, merging or removing a category, or restoring a backup
   - before applying or deleting a rule, at most once per 30 minutes
 
-  If the backup fails, the action doesn't happen. The app keeps the latest 20 automatic backups.
+  Every backup is checked when it is made. If the check or the backup fails, the bad file is deleted and the action doesn't happen. The app keeps the latest 20 automatic backups.
+- **Old backups:** the Backups section warns when the newest backup is more than 30 days old.
 - **Restore** first backs up the current data. It then replaces the database and upgrades an older layout.
 
 ## Interface

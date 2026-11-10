@@ -35,7 +35,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/parsing.py`: KBC and Belfius CSVs, and duplicate fingerprints.
   - `core/revolut.py`: Revolut, keyed as `REVOLUT-CURRENT-EUR`.
   - `core/card_exports.py`: KBC card CSVs and Belfius PDFs.
-  - `core/imports.py`: staging, committing and undoing imports, accounts, and the accounts overview.
+  - `core/imports.py`: staging, committing and undoing imports, accounts, and the accounts overview with its balance check (`_balance_checks`).
   - `core/source_files.py`: copies of imported files, in the backup folder. A failed copy is never fatal.
 - **`core/statements.py`:** card statements and `refresh_card_settlements`. `statement_rows` replays its carried-credit logic for display; keep the two in sync.
 - **Transactions and categories:**
@@ -45,7 +45,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/categories.py`: list, add, rename, merge and remove. Merge and remove keep budgets, recurring items and forecast settings in step.
   - `core/annotations.py`: notes and follow-ups.
   - `core/budgets.py`: yearly category budgets.
-- **`core/reports.py`:** the yearly report, balance history, and own-transfer detection (`OWN_TRANSFER_SQL`, `COUNTED_SQL`).
+- **`core/reports.py`:** the yearly report, balance history, own-transfer detection (`OWN_TRANSFER_SQL`, `COUNTED_SQL`), and the chain order of an account's rows (`CHAIN_ROWS_SQL`, `CHAIN_ORDER_SQL`).
 - **Forecasting:**
   - `core/recurring.py`: recurring payment detection and the stored decisions.
   - `core/forecast.py`: the forecast for all entities at once, the backtest and the consulting check.
@@ -54,7 +54,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/planned.py`, `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
 
 **Frontend** (`frontend/src`):
-- **`App.tsx`:** global state, the page switch, the forecast and the Forecast switch (`pfm.showForecast` in localStorage), and every global keyboard shortcut.
+- **`App.tsx`:** global state, the page switch, the Forecast switch (`pfm.showForecast` in localStorage), and every global keyboard shortcut. Its data loading is in `dataHooks.ts` (report, transactions, balance history, budgets, forecast vs reality), each with a guard against late responses.
   - **Which part keys act on:** the Forecast and Accounts pages each have several parts, and `section` remembers the one last clicked, so N and the arrow keys act there.
   - **Always-mounted file input:** browsers open a file chooser only during a user gesture, so I and N use this input.
 - **Overview:**
@@ -93,6 +93,9 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - Recurring candidates are never stored. Only confirmed or ignored decisions are.
   - Snapshots are taken once per month and never replaced. Category merge and remove repoint their lines.
 - **New tables** (budgets, forecast, recurring, reimbursements) come from `SCHEMA` with `CREATE TABLE IF NOT EXISTS`, so they need no migration backup. New columns go through `ADDED_COLUMNS` with a backfill.
+- **Balances:**
+  - **Chain order:** within one export, file order is the bank's running-balance order, and `row_number` only compares within an import. Order rows with `CHAIN_ROWS_SQL` and `CHAIN_ORDER_SQL`, never by date and `row_number` alone.
+  - **By booking date:** a day's closing balance is the opening balance plus everything booked up to that day, so month balances agree with the year table.
 - **Card statements** replace the settlement that paid them (`replaced_by_statement_id`).
 - **Soft delete:** removed transactions get `deleted_at`. Statement totals still count them.
 - **Notes and follow-ups** never change a category or a total. Undo import hard-deletes them, hence its warning.
@@ -104,6 +107,9 @@ A local-only personal finance manager: it imports bank and card exports, categor
 
 - **Backup files:** open them read-only with `?mode=ro&immutable=1`, and build the URI with `Path.as_uri()`. `mode=ro` alone fails on WAL files, and the path may contain `@`.
 - **Migrations:** try a migration on a copy of the real database first, and report what the backfill did.
+- **KBC exports are not sorted by date:** a row booked late can follow rows of a later date, so the last row of a day is not that day's closing balance.
+- **Test exports:** write multi-row test files newest first, as banks do; balances are read in file order.
+- **Caches:** `describe.summarize` and the compared texts in `rules.py` are remembered in memory, so restart the server after changing them.
 - **jsdom and key handlers:** jsdom lacks `scrollIntoView`, so call it as `?.()`. Global key handlers must ignore editable targets and open dialogs (`[role="dialog"][aria-modal="true"]`).
 - **CSS specificity:** table-wide rules have beaten row-specific ones before.
 - **`layout-check`:**
