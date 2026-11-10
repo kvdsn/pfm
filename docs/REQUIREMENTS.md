@@ -126,6 +126,6 @@ The Forecast switch (S) hides all projections from the year table, the graph and
 
 - **Layout:** one page with a top bar for the entity, year and pages. The top bar is one row from 1680px wide.
 - **Tables** fit without horizontal scrolling at 1024px wide.
-- **Appearance:** follows the system's light or dark setting. All text is monospace, with tabular numbers.
+- **Appearance:** follows the system's light or dark setting. The look is "Native": the system sans font with tabular numbers, rounded corners, panels lifted by a soft shadow, pill-shaped chips and a plum accent. Raw bank texts stay monospace.
 - **Messages:** short toasts at the bottom of the page. Dialogs show their errors next to the form.
 - **Keyboard shortcuts** are listed only in the Keyboard shortcuts dialog (K) and a single footer hint. Global shortcuts are ignored while typing or while a dialog is open.

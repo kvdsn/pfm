@@ -71,7 +71,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
 - **Shared:**
   - `ShortcutsDialog.tsx`: `SHORTCUT_GROUPS`, the only list of shortcuts.
   - `hooks.ts`, `Dialog.tsx`, `Toast.tsx`, `BalanceChart.tsx`, `api.ts` and `types.ts`.
-  - `styles.css`: color tokens on `:root`, redefined for dark mode. Use tokens, never hard-coded colors.
+  - `styles.css`: color, type (`--ui-font`, `--text-*`), radius (`--radius-*`, `--radius-pill`) and shadow (`--panel-shadow`) tokens on `:root`, colors and shadows redefined for dark mode. Use tokens, never hard-coded colors. `--mono-font` is only for raw bank text.
 
 **Tests:** `tests/test_*.py` for the backend. Frontend tests are `*.test.tsx` next to their component.
 

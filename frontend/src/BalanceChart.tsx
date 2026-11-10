@@ -7,8 +7,8 @@ import { useElementSize } from "./hooks";
 
 const MIN_WIDTH = 620;
 const INSET = { left: 92, right: 32, top: 28, bottom: 52 };
-/** Approximate width of one 12px monospace character, for label collision checks. */
-const CHAR_WIDTH = 7.4;
+/** Approximate width of one 12px character, for label collision checks. */
+const CHAR_WIDTH = 6.6;
 
 export function BalanceChart({
   history,
