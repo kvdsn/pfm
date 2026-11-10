@@ -215,7 +215,10 @@ export function App() {
   const hasYearData = yearSummaries.length > 0 || forecastYears.includes(year);
   const editingTransaction = transactions.find((transaction) => transaction.id === editingId);
 
+  const refreshRequest = useRef(0);
+  const transactionsRequest = useRef(0);
   const refresh = useCallback(async () => {
+    const request = ++refreshRequest.current;
     setError("");
     try {
       const [report, nextCategories, nextImports, nextForecast] = await Promise.all([
@@ -226,6 +229,7 @@ export function App() {
         api<ImportRecord[]>(`/api/imports?account_type=${accountType}`),
         fetchForecast(accountType),
       ]);
+      if (request !== refreshRequest.current) return null;
       setLoadedForecast(nextForecast);
       setMonths(report.months);
       setSummaries(report.summaries);
@@ -237,12 +241,14 @@ export function App() {
       setYear((current) => (available.includes(current) ? current : reported.at(-1) || ""));
       return report;
     } catch (cause) {
+      if (request !== refreshRequest.current) return null;
       setError(errorMessage(cause, "Could not load reports"));
       return null;
     }
   }, [accountType]);
 
   const loadTransactions = useCallback(async (overrideYear?: string) => {
+    const request = ++transactionsRequest.current;
     const effectiveYear = overrideYear ?? year;
     if (!effectiveYear) {
       setTransactions([]);
@@ -265,6 +271,7 @@ export function App() {
         params.set("limit", String(TRANSACTION_PAGE_SIZE));
         params.set("offset", String(items.length));
         const page = await api<{ total: number; items: Transaction[]; open_follow_ups?: number }>(`/api/transactions?${params}`);
+        if (request !== transactionsRequest.current) return;
         total = page.total;
         openCount = page.open_follow_ups ?? null;
         if (page.items.length === 0 && items.length < total) {
@@ -277,6 +284,7 @@ export function App() {
       setTotalTransactions(total);
       setOpenFollowUps(openCount);
     } catch (cause) {
+      if (request !== transactionsRequest.current) return;
       setError(errorMessage(cause, "Could not load transactions"));
     }
   }, [accountType, followUpFilter, search, selectedCategory, year]);
@@ -310,6 +318,9 @@ export function App() {
       if (importedType !== accountType) {
         setBalanceHistoryVersion((version) => version + 1);
         setAccountType(importedType);
+        setFollowUpFilter("all");
+        setSearch("");
+        setSelectedCategory(null);
       } else {
         await reloadToLatestYear();
       }
@@ -348,9 +359,13 @@ export function App() {
       setBalanceHistory(null);
       return;
     }
+    let current = true;
     api<BalanceHistory>(`/api/balance-history?account_type=${accountType}&year=${year}`)
-      .then(setBalanceHistory)
-      .catch((cause) => setError(errorMessage(cause, "Could not load balance history")));
+      .then((history) => current && setBalanceHistory(history))
+      .catch((cause) => current && setError(errorMessage(cause, "Could not load balance history")));
+    return () => {
+      current = false;
+    };
   }, [accountType, balanceHistoryVersion, forecastYears, year]);
 
   // A server without budgets answers with the app page instead of JSON; that is the same as having none.
@@ -414,7 +429,10 @@ export function App() {
 
   useEscapeKey(showBalanceHistory, () => setShowBalanceHistory(false));
   useEscapeKey(showShortcuts, () => setShowShortcuts(false));
-  useEscapeKey(view !== "overview", () => setView("overview"));
+  // A dialog over the page (such as the corporate tax advice) takes Escape; it closes itself.
+  useEscapeKey(view !== "overview", () => {
+    if (!document.querySelector('[role="dialog"][aria-modal="true"]')) setView("overview");
+  });
   const resetRulesContext = () => {
     setRulesFilter("");
     setNewRuleText("");
@@ -639,6 +657,8 @@ export function App() {
       if (editingId !== null) return;
       const key = event.key.toLowerCase();
       // Dialogs only react to their own toggle keys (and Escape, handled separately).
+      // A modal dialog inside a page takes every key.
+      if (!showShortcuts && !showBalanceHistory && document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (showShortcuts && key !== "k") return;
       if (showBalanceHistory && key !== "g" && key !== "k") return;
       const anywhere: Record<string, () => boolean | void> = {

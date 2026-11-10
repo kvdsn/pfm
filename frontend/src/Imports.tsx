@@ -77,7 +77,12 @@ export function useImportFlow({
     let imported = 0;
     let skipped = 0;
     const unsaved: string[] = [];
-    const remaining = [...previews];
+    // Files with balances of their own go first; deferred ones follow, newest first, so their balances can chain.
+    const remaining = [
+      ...previews.filter((preview) => !preview.balances_deferred),
+      ...previews.filter((preview) => preview.balances_deferred)
+        .sort((a, b) => (b.last_date ?? "").localeCompare(a.last_date ?? "")),
+    ];
     try {
       while (remaining.length) {
         const preview = remaining[0];

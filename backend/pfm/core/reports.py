@@ -65,7 +65,7 @@ def _account_balances(db: sqlite3.Connection, account_type: str) -> list[_Accoun
         SELECT a.id AS account_id, a.iban, t.balance_date, t.balance_cents, t.source_amount_cents
         FROM transactions t JOIN accounts a ON a.id = t.account_id
         WHERE a.account_type = ? AND t.deleted_at IS NULL AND t.balance_cents IS NOT NULL
-        ORDER BY a.id, t.balance_date, t.row_number DESC
+        ORDER BY a.id, t.balance_date, t.import_id, t.row_number DESC
         """,
         (account_type,),
     ).fetchall()

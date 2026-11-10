@@ -191,6 +191,10 @@ export type ImportPreview = {
     suggestions: Record<AccountType, { category: string; flow_type: FlowType }>;
   }[];
   sample_truncated: boolean;
+  /** The file has no balances of its own and derives them from other imports (absent on an older server). */
+  balances_deferred?: boolean;
+  /** ISO date of the newest transaction (absent on an older server). */
+  last_date?: string;
 };
 /** Other transactions with the same merchant and kind, and the category they most often have. */
 export type SimilarTransactions = {

@@ -1186,6 +1186,116 @@ class FinanceCoreTests(unittest.TestCase):
         self.assertEqual(mapped_category["account_type"], "business")
         self.assertEqual(mapped_category["name"], "Groceries")
 
+    def test_same_day_balance_comes_from_the_later_overlapping_export(self):
+        account = "BE00000000000000000001"
+        first = make_csv([
+            transaction(account, "29/05/2026", "-10,00", "90,00", "A"),
+            transaction(account, "28/05/2026", "100,00", "100,00", "Start"),
+        ])
+        second = make_csv([
+            transaction(account, "02/06/2026", "-1,00", "64,00", "E"),
+            transaction(account, "29/05/2026", "-20,00", "65,00", "C"),
+            transaction(account, "29/05/2026", "-5,00", "85,00", "B"),
+            transaction(account, "29/05/2026", "-10,00", "90,00", "A"),
+            transaction(account, "28/05/2026", "100,00", "100,00", "Start"),
+        ])
+        for name, contents in (("one.csv", first), ("two.csv", second)):
+            preview = core.stage_import(self.database, name, contents.encode(), self.staging)
+            core.commit_import(self.database, preview["token"], "personal", self.staging)
+        report = core.report(self.database, "personal", today=date(2026, 6, 30))
+        may, june = report["summaries"][0], report["summaries"][1]
+        self.assertEqual(may["account_balances"][0]["closing"], "65.00")
+        self.assertEqual(june["account_balances"][0]["opening"], "65.00")
+
+    def test_overview_latest_balance_prefers_the_later_import_on_the_same_day(self):
+        account = "BE00000000000000000001"
+        first = make_csv([
+            transaction(account, "10/05/2026", "-10,00", "90,00", "A"),
+            transaction(account, "09/05/2026", "100,00", "100,00", "Start"),
+        ])
+        second = make_csv([
+            transaction(account, "10/05/2026", "-20,00", "65,00", "C"),
+            transaction(account, "10/05/2026", "-5,00", "85,00", "B"),
+            transaction(account, "10/05/2026", "-10,00", "90,00", "A"),
+            transaction(account, "09/05/2026", "100,00", "100,00", "Start"),
+        ])
+        for name, contents in (("one.csv", first), ("two.csv", second)):
+            preview = core.stage_import(self.database, name, contents.encode(), self.staging)
+            core.commit_import(self.database, preview["token"], "personal", self.staging)
+        self.assertEqual(core.account_overview(self.database)[0]["latest_balance"], "65.00")
+
+    def test_belfius_balances_chain_when_both_files_are_staged_before_either_is_committed(self):
+        def row(date, amount, text):
+            return {"Boekingsdatum": date, "Valutadatum": date, "Bedrag": amount, "Transactie": text}
+
+        newer = belfius_csv(
+            [row("02/01/2026", "-30,00", "NEW"), row("01/01/2026", "50,00", "OLD")],
+            range_end="16/10/2026", saldo="120,00 EUR",
+        )
+        older = belfius_csv(
+            [row("30/12/2025", "-10,00", "PRE NEW"), row("29/12/2025", "5,00", "PRE OLD")],
+            range_end="31/12/2025", saldo="",
+        )
+        newer_preview = core.stage_import(self.database, "newer.csv", newer, self.staging)
+        older_preview = core.stage_import(self.database, "older.csv", older, self.staging)
+        self.assertFalse(newer_preview["balances_deferred"])
+        self.assertTrue(older_preview["balances_deferred"])
+        self.assertEqual(newer_preview["last_date"], "2026-01-02")
+        self.assertEqual(older_preview["last_date"], "2025-12-30")
+        core.commit_import(self.database, newer_preview["token"], "personal", self.staging)
+        core.commit_import(self.database, older_preview["token"], "personal", self.staging)
+        with core.connect(self.database) as db:
+            balances = {
+                r["booking_date"]: r["balance_cents"]
+                for r in db.execute("SELECT booking_date, balance_cents FROM transactions")
+            }
+        self.assertEqual(
+            balances,
+            {"2025-12-29": 11000, "2025-12-30": 10000, "2026-01-01": 15000, "2026-01-02": 12000},
+        )
+
+    def test_remapping_keeps_income_flag_and_clears_rule_links(self):
+        account = "BE00000000000000000001"
+        rows = [
+            transaction(account, "01/05/2026", "1000,00", "1000,00", "Acme Payroll"),
+            transaction(account, "02/05/2026", "-45,00", "955,00", "Fresh Market"),
+        ]
+        preview = core.stage_import(self.database, "p.csv", make_csv(rows).encode(), self.staging)
+        core.commit_import(self.database, preview["token"], "personal", self.staging)
+        with core.connect(self.database) as db:
+            salary_id = core.get_category_id(db, "personal", "Salary")
+            groceries_id = db.execute(
+                "SELECT id FROM categories WHERE account_type = 'personal' AND name = 'Groceries'"
+            ).fetchone()["id"]
+            pay_id = db.execute("SELECT id FROM transactions WHERE amount_cents > 0").fetchone()["id"]
+        core.set_category_income(self.database, salary_id, True)
+        core.update_transaction(self.database, pay_id, {"category_id": salary_id})
+        rule_id = core.save_category_rule(
+            self.database, "personal", groceries_id, "Fresh Market", ["merchant"], "expense"
+        )["id"]
+        core.run_category_rule(self.database, "personal", rule_id)
+        with core.connect(self.database) as db:
+            self.assertIsNotNone(db.execute(
+                "SELECT category_rule_id FROM transactions WHERE amount_cents < 0"
+            ).fetchone()["category_rule_id"])
+        core.remap_account(self.database, core.accounts_list(self.database)[0]["id"], "business")
+        with core.connect(self.database) as db:
+            salary = db.execute(
+                "SELECT is_income FROM categories WHERE account_type = 'business' AND name = 'Salary'"
+            ).fetchone()
+            spent = db.execute(
+                """
+                SELECT t.category_rule_id, t.category_source, c.name FROM transactions t
+                JOIN categories c ON c.id = t.category_id WHERE t.amount_cents < 0
+                """
+            ).fetchone()
+        self.assertTrue(salary["is_income"])
+        self.assertIsNone(spent["category_rule_id"])
+        self.assertEqual(spent["category_source"], "rule")
+        self.assertEqual(spent["name"], "Groceries")
+        summary = core.report(self.database, "business")["summaries"][0]
+        self.assertEqual(summary["income"], "1000.00")
+
     def test_only_category_and_flow_type_are_editable(self):
         account = "BE00000000000000000001"
         row = transaction(account, "01/05/2026", "-10,00", "90,00", "Shop")

@@ -210,14 +210,15 @@ def list_transactions(
         sql += f" AND {REPORT_FLOW_SQL} = ?"
         params.append(flow_type_filter)
     search = parse_search(query)
-    text_sql = "(" + " OR ".join(f"{column} LIKE ?" for column in SEARCHED_COLUMNS) + ")"
+    text_sql = "(" + " OR ".join(f"{column} LIKE ? ESCAPE '\\'" for column in SEARCHED_COLUMNS) + ")"
     amount_sql = ""
     amount_params: list[Any] = []
     if search.amount:
         column = "t.amount_cents" if search.amount.signed else "ABS(t.amount_cents)"
         amount_sql = f"{column} BETWEEN ? AND ?"
         amount_params = [search.amount.low_cents, search.amount.high_cents]
-    text_params = [f"%{search.text}%"] * len(SEARCHED_COLUMNS)
+    like_text = "%" + re.sub(r"([\\%_])", r"\\\1", search.text) + "%"
+    text_params = [like_text] * len(SEARCHED_COLUMNS)
     if search.amount and not search.text:
         sql += f" AND {amount_sql}"
         params.extend(amount_params)
@@ -225,8 +226,8 @@ def list_transactions(
         # A short lone number ("41") is mostly an amount; as text it only matches merchant names (not notes),
         # because descriptions and memos are full of references and card numbers that would drown it.
         # Longer numbers, such as a contract or reference number, also search the full texts.
-        sql += f" AND (t.merchant LIKE ? OR {amount_sql})"
-        params.extend([f"%{search.text}%", *amount_params])
+        sql += f" AND (t.merchant LIKE ? ESCAPE '\\' OR {amount_sql})"
+        params.extend([like_text, *amount_params])
     elif search.amount and search.match_any:
         sql += f" AND ({text_sql} OR {amount_sql})"
         params.extend([*text_params, *amount_params])

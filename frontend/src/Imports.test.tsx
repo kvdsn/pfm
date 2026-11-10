@@ -60,6 +60,31 @@ describe("commitImport", () => {
     expect(onImported).toHaveBeenCalledWith("personal");
   });
 
+  it("commits files with their own balances first, then deferred ones newest first", async () => {
+    const callbacks = { onImported: vi.fn(async () => {}), onUndone: vi.fn(async () => {}), onError: vi.fn(), onNotice: vi.fn() };
+    const previews: Record<string, Partial<ImportPreview>> = {
+      "a.csv": { balances_deferred: true, last_date: "2026-01-31" },
+      "b.csv": {},
+      "c.csv": { balances_deferred: true, last_date: "2026-03-31" },
+      "d.csv": { balances_deferred: false },
+    };
+    apiMock.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/import/preview")) {
+        const name = decodeURIComponent(url.split("filename=")[1]);
+        return { ...preview(`tok-${name[0]}`, name), ...previews[name] };
+      }
+      if (url.endsWith("/commit")) return { imported: 1, duplicates_skipped: 0 };
+      return backup(18, "before import");
+    });
+    const hook = renderHook(() => useImportFlow(callbacks));
+    await act(() => hook.result.current.previewFiles(Object.keys(previews).map((name) => new File(["x"], name))));
+    apiMock.mockClear();
+    await act(() => hook.result.current.commitImport());
+    expect(urls().filter((url) => url.endsWith("/commit"))).toEqual([
+      "/api/import/tok-b/commit", "/api/import/tok-d/commit", "/api/import/tok-c/commit", "/api/import/tok-a/commit",
+    ]);
+  });
+
   it("mentions files whose copy could not be saved", async () => {
     const { hook, onNotice } = await renderFlow();
     apiMock.mockImplementation(async (url: string) => {

@@ -150,3 +150,24 @@ class ShortNumberSearchTests(unittest.TestCase):
             self.assertEqual(found("41"), ["-41.00"])
             self.assertEqual(found("4471"), ["-3.00"])
 
+
+
+class WildcardSearchTests(unittest.TestCase):
+    def test_percent_and_underscore_match_literally(self):
+        with patch.dict(os.environ), tempfile.TemporaryDirectory() as folder:
+            os.environ.pop("PFM_BACKUP_DIR", None)
+            database = Path(folder) / "finance.sqlite3"
+            core.initialize(database)
+            staging = {}
+            preview = core.stage_import(database, "w.csv", make_csv([
+                transaction(ACCOUNT, "01/05/2026", "-10,00", "90,00", "Plain Shop", "PLAIN"),
+                transaction(ACCOUNT, "02/05/2026", "-11,00", "79,00", "Shop_Under", "UNDER"),
+                transaction(ACCOUNT, "03/05/2026", "-12,00", "67,00", "Shop", "50% OFF"),
+            ]).encode(), staging)
+            core.commit_import(database, preview["token"], "personal", staging)
+            found = lambda q: sorted(
+                i["description"] for i in core.list_transactions(database, "personal", None, None, q, 50, 0)["items"]
+            )
+            self.assertEqual(found("_"), ["UNDER"])
+            self.assertEqual(found("%"), ["50% OFF"])
+            self.assertEqual(found("\\"), [])

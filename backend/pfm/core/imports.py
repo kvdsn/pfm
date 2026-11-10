@@ -66,7 +66,7 @@ def account_overview(database_path: Path) -> list[dict[str, Any]]:
                 """
                 SELECT account_id, balance_cents FROM (
                     SELECT account_id, balance_cents,
-                           ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY balance_date DESC, row_number ASC) AS rank
+                           ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY balance_date DESC, import_id DESC, row_number ASC) AS rank
                     FROM transactions WHERE deleted_at IS NULL AND balance_cents IS NOT NULL
                 ) WHERE rank = 1
                 """
@@ -112,15 +112,24 @@ def _remap_account(db: sqlite3.Connection, account_id: int, account_type: str) -
     """Move an account to the other account type, keeping category names."""
     for transaction in db.execute(
         """
-        SELECT t.id, c.name AS category
+        SELECT t.id, c.name AS category, c.is_income
         FROM transactions t JOIN categories c ON c.id = t.category_id
         WHERE t.account_id = ?
         """,
         (account_id,),
     ).fetchall():
+        name = transaction["category"]
+        if name != UNCATEGORIZED and not db.execute(
+            "SELECT 1 FROM categories WHERE account_type = ? AND name = ?", (account_type, name)
+        ).fetchone():
+            # A category the target entity lacks keeps the source category's income flag.
+            db.execute(
+                "INSERT INTO categories(account_type, name, is_income) VALUES (?, ?, ?)",
+                (account_type, name, int(transaction["is_income"])),
+            )
         db.execute(
-            "UPDATE transactions SET category_id = ? WHERE id = ?",
-            (get_category_id(db, account_type, transaction["category"]), transaction["id"]),
+            "UPDATE transactions SET category_id = ?, category_rule_id = NULL WHERE id = ?",
+            (get_category_id(db, account_type, name), transaction["id"]),
         )
     db.execute("UPDATE accounts SET account_type = ? WHERE id = ?", (account_type, account_id))
 
@@ -306,6 +315,7 @@ def stage_import(
     iban, rows, unknown_columns = parsed.account, parsed.rows, parsed.unknown_columns
     now = datetime.now().timestamp()
     _expire_staged_imports(staging, now)
+    chained = bool(rows) and rows[0].get("_chain_anchor") == "1"
     with connect(database_path) as db:
         account = _find_account(db, iban)
         known = _known_fingerprints(db, account)
@@ -336,6 +346,7 @@ def stage_import(
     safe_filename = safe_filename.replace(iban, masked_iban(iban))
     staging[token] = {
         "parsed": parsed, "iban": iban, "rows": rows, "filename": safe_filename, "contents": contents, "created_at": now,
+        "chained": chained,
     }
     account_type = account["account_type"] if account else None
     return {
@@ -351,6 +362,8 @@ def stage_import(
         "unknown_columns": unknown_columns,
         "preview": preview,
         "sample_truncated": len(rows) > PREVIEW_ROWS,
+        "balances_deferred": chained,
+        "last_date": max(row["_booking_date"] for row in rows),
     }
 
 
@@ -392,7 +405,14 @@ def commit_import(
         ).lastrowid)
         statement_ids = store_statements(db, account_id, parsed.statements)
         rules = account_rules(db, account_type)
-        existing = set(_known_fingerprints(db, account))
+        known = _known_fingerprints(db, account)
+        existing = set(known)
+        if staged.get("chained") and staged["rows"]:
+            # Chain again against what is stored now: files staged together may have been committed in any order.
+            for row in staged["rows"]:
+                row["_balance_cents"] = ""
+            staged["rows"][0]["_chain_anchor"] = "1"
+            fill_chained_balances(db, staged["rows"], account, known)
         for row, pending in zip(staged["rows"], pending_fingerprints(staged["rows"])):
             fingerprint = transaction_fingerprint(row)
             if _is_known(fingerprint, pending, existing):

@@ -187,6 +187,51 @@ describe("Forecast vs reality", () => {
 });
 
 describe("Global keyboard shortcuts", () => {
+  it("a modal dialog inside a page takes Escape and the shortcuts", async () => {
+    await renderApp();
+    press("f");
+    expect(screen.getByRole("button", { name: "Forecast" })).toHaveAttribute("aria-pressed", "true");
+    const modal = document.createElement("div");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    document.body.appendChild(modal);
+    press("Escape");
+    press("a");
+    press("e");
+    expect(screen.getByRole("button", { name: "Forecast" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Accounts" })).toHaveAttribute("aria-pressed", "false");
+    expect(pressed("Personal")).toBe("true");
+    modal.remove();
+    press("Escape");
+    expect(screen.getByRole("button", { name: "Forecast" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("ignores a slow transactions response that arrives after a newer one", async () => {
+    let releaseSlow: () => void = () => {};
+    const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    apiMock.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/report")) return { months: ["2026-03"], summaries: [summary] };
+      if (url.startsWith("/api/transactions")) {
+        if (url.includes("q=old")) {
+          await slow;
+          return { total: 1, items: [transaction(1, { merchant: "Old result" })] };
+        }
+        if (url.includes("q=new")) return { total: 1, items: [transaction(2, { merchant: "New result" })] };
+        return { total: 0, items: [] };
+      }
+      if (url.startsWith("/api/balance-history")) return { points: [] };
+      return [];
+    });
+    await renderApp();
+    const search = screen.getByLabelText("Search transactions");
+    fireEvent.change(search, { target: { value: "old" } });
+    fireEvent.change(search, { target: { value: "new" } });
+    await screen.findByText("New result");
+    await act(async () => { releaseSlow(); await slow; });
+    expect(screen.getByText("New result")).toBeInTheDocument();
+    expect(screen.queryByText("Old result")).not.toBeInTheDocument();
+  });
+
   it("E cycles personal, business, kids; P, L and B do nothing", async () => {
     await renderApp();
     expect(pressed("Personal")).toBe("true");
