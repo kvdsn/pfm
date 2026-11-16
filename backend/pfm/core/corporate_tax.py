@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .database import connect, format_money, parse_money
-from .forecast import _add, _Context, _index, _load, _project, _role, _round_cents
+from .forecast import _add, _Context, _index, _load, _projection, _role, _round_cents
 from .forecast_settings import load_settings
 from .planned import _unlink
 from .recurring import _now
@@ -191,7 +191,7 @@ def project_later_years(context: _Context, lines: dict[str, Any], assumptions: l
 def corporate_tax(database_path: Path, today: Optional[date] = None) -> dict[str, Any]:
     """The tax estimate, prepayments and advice for the current year and the next."""
     context = _load(database_path, today or date.today())
-    lines, _, _ = _project(context)
+    lines = _projection(context)[0]
     return {"years": [_estimate(context, lines, year) for year in (context.today.year, context.today.year + 1)]}
 
 

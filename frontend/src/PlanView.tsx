@@ -788,6 +788,7 @@ export function PlanView({
   const loanFields: Field[] = useMemo(() => [
     { kind: "text", key: "loan_start", label: "Loan starts on", help: "Entity transfers from this date count as the loan" },
     { kind: "number", key: "loan_interest_rate", label: "Interest rate (%)" },
+    { kind: "checkbox", key: "loan_interest_auto", label: "Plan the interest automatically each 31 December" },
   ], []);
   const roleFields: Field[] = useMemo(() => [{ kind: "roles", roles }], [roles]);
 

@@ -94,3 +94,61 @@ class InterestTests(LoanFixture):
         self.assertEqual(self.client.put("/api/forecast/settings", json={"loan_start": "soon"}).status_code, 400)
         saved = self.client.put("/api/forecast/settings", json={"loan_start": "2026-03-01", "loan_interest_rate": 4}).json()
         self.assertEqual((saved["loan_start"], saved["loan_interest_rate"]), ("2026-03-01", 4))
+
+
+class AutoInterestTests(LoanFixture):
+    def lines(self, entity="business"):
+        months = core.forecast(self.database, TODAY)[entity]["months"]
+        return [(m["month"], line) for m in months for line in m["lines"] if line["source"] == "loan_interest"]
+
+    def test_pays_each_years_interest_on_31_december_and_leaves_none_unpaid(self):
+        self.interest_categories()
+        self.transfer(date(2026, 1, 1), 10000.0)
+        self.settings(loan_interest_auto=True)
+        found = self.lines()
+        self.assertEqual([(m, l["date"], l["amount"], l["detail"]) for m, l in found], [
+            ("2026-12", "2026-12-31", "350.00", "Director loan interest 2026"),
+            ("2027-12", "2027-12-31", "350.00", "Director loan interest 2027"),
+        ])
+        personal = self.lines("personal")
+        self.assertEqual([l["amount"] for _, l in personal], ["-350.00", "-350.00"])
+        result = self.loan()
+        self.assertTrue(result["auto"])
+        self.assertEqual([y["interest_unpaid"] for y in result["years"]], ["0.00", "0.00"])
+        self.assertEqual(self.year("2026")["interest_planned"], "350.00")
+
+    def test_a_planned_payment_for_the_year_is_subtracted(self):
+        self.interest_categories()
+        self.transfer(date(2026, 1, 1), 10000.0)
+        core.plan_loan_interest(self.database, "2026-11-30", "100", None, TODAY)
+        self.settings(loan_interest_auto=True)
+        self.assertEqual([l["amount"] for m, l in self.lines() if m == "2026-12"], ["250.00"])
+        self.assertEqual(self.year("2026")["interest_unpaid"], "0.00")
+
+    def test_nothing_when_off_or_without_the_categories(self):
+        self.transfer(date(2026, 1, 1), 10000.0)
+        self.settings(loan_interest_auto=True)
+        self.assertEqual(self.lines(), [])
+        self.interest_categories()
+        self.settings(loan_interest_auto=False)
+        self.assertEqual(self.lines(), [])
+        self.assertFalse(self.loan()["auto"])
+
+    def test_the_interest_matches_the_paid_line_even_though_paying_it_raises_transfers(self):
+        self.interest_categories()
+        # Personal sits at its minimum, so a transfer tops it up each month, and paying interest raises the next one.
+        self.add(PERSONAL, "personal", "Start", [(date(2026, 10, 13), 500.0, 500.0)])
+        self.add(BUSINESS, "business", "Start2", [(date(2026, 10, 13), 500.0, 100000.0)])
+        self.settings(loan_interest_auto=True)
+        paid = {l["date"][:4]: int(l["amount"].replace(".", "")) for _, l in self.lines()}
+        for year, cents in paid.items():
+            interest = self.year(year)["interest"]
+            self.assertLessEqual(abs(int(interest.replace(".", "")) - cents), 1)
+        self.assertTrue(paid)
+
+    def test_projected_interest_income_counts_in_the_taxable_profit(self):
+        self.interest_categories()
+        self.transfer(date(2026, 1, 1), 10000.0)
+        self.settings(loan_interest_auto=True)
+        tax = core.corporate_tax(self.database, TODAY)["years"][0]
+        self.assertIn({"category": "Director loan interest", "amount": "350.00"}, tax["breakdown"])

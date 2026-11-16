@@ -422,6 +422,8 @@ export type ForecastSettings = {
   /** Director loan: the day Entity transfers start to count as the loan, and the simple interest rate in percent. */
   loan_start: string;
   loan_interest_rate: number;
+  /** Plan each year's interest on 31 December from the forecast. */
+  loan_interest_auto: boolean;
   /** The last forecast year; 0 means next year. */
   forecast_end_year: number;
   /** Business's year-end target in months of costs, each in force until the next. */
@@ -559,6 +561,8 @@ export type DirectorLoanPayment = { date: string; amount: string; projected: boo
 export type DirectorLoan = {
   start: string;
   rate: number;
+  /** Whether the interest is planned automatically; may be missing in older responses. */
+  auto?: boolean;
   balance: string;
   interest_to_date: string;
   interest_paid: string;

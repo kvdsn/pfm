@@ -100,6 +100,7 @@ The Forecast page also estimates these:
   - **Per year:** the year-end balance, the target, the room above it, the room net of withholding, the net room added that year, the lowest month-end and the dividends paid.
   - The Business buffer for Entity transfers stays a separate floor.
 - **Director loan:** Entity transfers from the loan start count as a loan to the director. It carries simple daily interest (3.5% by default), never on a negative balance. Liquidation reserve payouts pay it down, and it may go below zero.
+  - **Automatic interest:** with "Plan the interest automatically each 31 December" on (and the two interest categories chosen), the forecast projects each year's payment from the loan start's year on: the year's interest less what is booked or planned in the interest category that year. It follows the forecast's transfers and counts as Business income in the profit, so unpaid interest stays 0.
 - **Liquidation reserve** (Business, settings to confirm with your accountant):
   - **Existing reserves:** each with its gross amount, the date it can be paid out at the low rate, and that rate.
   - **New reserves:** a share of each year's profit after corporate tax (0% by default). Business pays 10% of the reserve on 20 December, and the reserve can be paid out at 6.5% from 1 January, 3 years after the year it was formed.

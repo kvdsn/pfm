@@ -15,7 +15,6 @@ from typing import Any, Optional
 from .database import ACCOUNT_TYPES, UNCATEGORIZED, connect, format_money
 from .forecast import (
     TOLERANCE_CENTS,
-    _balances,
     _band,
     _base_cents,
     _baseline_index,
@@ -27,7 +26,7 @@ from .forecast import (
     _month_key,
     _origins,
     _percentile,
-    _project,
+    _projection,
     _round_cents,
     _run_backtests,
 )
@@ -72,8 +71,7 @@ def take_snapshot(database_path: Path, today: Optional[date] = None) -> bool:
     """
     today = today or date.today()
     context = _load(database_path, today)
-    lines, assumptions, indexes = _project(context)
-    closings, _ = _balances(context, lines, assumptions)
+    lines, _, indexes, closings, _ = _projection(context)
     backtests = _run_backtests(context, indexes)
     month = _month_key(context.current)
     taken_at = datetime.combine(today, datetime.now().time()).isoformat(timespec="seconds")

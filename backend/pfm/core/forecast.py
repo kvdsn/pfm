@@ -947,12 +947,27 @@ def _entity_slice(
     }
 
 
-def _project(context: _Context) -> tuple[Lines, dict[str, list[str]], dict[str, _Index]]:
+def _interest_lines(context: _Context, lines: Lines, interest: dict[int, int]) -> None:
+    """The planned-automatically director loan interest: each year's payment on 31 December, Personal paying
+    Business (source `loan_interest`)."""
+    business_cid, personal_cid = _role(context, "loan_interest_business"), _role(context, "loan_interest_personal")
+    for year, cents in interest.items():
+        day = date(year, 12, 31)
+        text = f"Director loan interest {year}"
+        _add(lines, "personal", _index(day), personal_cid, -cents, "loan_interest", day, text)
+        _add(lines, "business", _index(day), business_cid, cents, "loan_interest", day, text)
+
+
+def _project(
+    context: _Context, interest: Optional[dict[int, int]] = None, indexes: Optional[dict[str, _Index]] = None,
+) -> tuple[Lines, dict[str, list[str]], dict[str, _Index]]:
     """The projected lines of every entity before the balance walk (so without entity transfers), the assumptions
-    so far and the baseline indexes."""
+    so far and the baseline indexes. `interest` (year -> cents) adds the automatic loan interest payments, and
+    `indexes` reuses baseline indexes already built. Callers that need the whole forecast use `_projection`."""
     lines: Lines = {name: {} for name in ACCOUNT_TYPES}
     assumptions: dict[str, list[str]] = {name: [] for name in ACCOUNT_TYPES}
-    indexes = {name: _baseline_index(context, name) for name in ACCOUNT_TYPES}
+    if indexes is None:
+        indexes = {name: _baseline_index(context, name) for name in ACCOUNT_TYPES}
     _recurring_lines(context, lines)
     _planned_lines(context, lines)
     _reimbursement_lines(context, lines)
@@ -963,6 +978,8 @@ def _project(context: _Context) -> tuple[Lines, dict[str, list[str]], dict[str, 
         assumptions[name].extend(shared)
     for name in ACCOUNT_TYPES:
         _baseline_lines(context, name, indexes[name], lines)
+    if interest:
+        _interest_lines(context, lines, interest)
     if context.last // 12 > context.today.year + 1:
         for name in ("business", "personal"):
             assumptions[name].append(
@@ -975,6 +992,72 @@ def _project(context: _Context) -> tuple[Lines, dict[str, list[str]], dict[str, 
     return lines, assumptions, indexes
 
 
+MAX_INTEREST_ROUNDS = 6
+
+
+def _loan_interest(context: _Context, lines: Lines) -> dict[int, int]:
+    """Each year's automatic interest payment: the interest accrued on the loan movements (after the balance
+    walk) less what is booked or planned in the Business interest category that year, never below 0."""
+    from .director_loan import _accrued, loan_movements  # imported here: director_loan builds on this module
+
+    cid = _role(context, "loan_interest_business")
+    start = date.fromisoformat(context.settings["loan_start"])
+    movements, _ = loan_movements(context, lines)
+    accrued = _accrued(
+        [(m["date"], m["cents"]) for m in movements], Decimal(str(context.settings["loan_interest_rate"])), start,
+        _month_end(context.last),
+    )
+    result = {}
+    for year in range(start.year, context.last // 12 + 1):
+        if date(year, 12, 31) < context.today:
+            continue
+        paid = sum(t["cents"] for t in context.entities["business"].transactions
+                   if t["category_id"] == cid and t["date"].year == year and t["date"] >= start)
+        planned = sum(
+            line["amount"] for month, month_lines in lines["business"].items() if month // 12 == year
+            for line in month_lines if line["category_id"] == cid and line["source"] != "loan_interest"
+        )
+        cents = _round_cents(accrued.get(year, Decimal(0))) - paid - planned
+        if cents > 0:
+            result[year] = cents
+    return result
+
+
+def _projection(
+    context: _Context,
+) -> tuple[Lines, dict[str, list[str]], dict[str, _Index], dict[str, dict[int, int]], dict[str, dict[int, list[str]]]]:
+    """The whole projection every caller shares: lines (with transfers), assumptions, baseline indexes, month
+    closings and flags.
+
+    With `loan_interest_auto`, the interest depends on the transfers, the transfers on the interest payments and
+    the corporate tax and reserves on the interest income, so it is solved as a fixed point: start with no
+    interest, walk the balances, work out each year's interest from the loan movements and repeat until no year
+    changes (at most MAX_INTEREST_ROUNDS times).
+    """
+    interest: dict[int, int] = {}
+    auto = context.settings["loan_interest_auto"]
+    roles = _role(context, "loan_interest_business"), _role(context, "loan_interest_personal")
+    chosen = all(role is not None for role in roles)
+    indexes = None
+    for _ in range(MAX_INTEREST_ROUNDS if auto and chosen else 1):
+        lines, assumptions, indexes = _project(context, interest, indexes)
+        closings, flags = _balances(context, lines, assumptions)
+        if not (auto and chosen):
+            break
+        found = _loan_interest(context, lines)
+        if found == interest:
+            break
+        interest = found
+    if auto:
+        for name in ("business", "personal"):
+            assumptions[name].append(
+                "Director loan interest is planned on 31 December of each year from the forecast."
+                if chosen else
+                "Choose the Director loan interest categories (Personal and Business) in the settings to plan the interest automatically."
+            )
+    return lines, assumptions, indexes, closings, flags
+
+
 def forecast(database_path: Path, today: Optional[date] = None) -> dict[str, dict[str, Any]]:
     """Every entity's projection from today's month to December of next year, keyed by account type.
 
@@ -982,8 +1065,7 @@ def forecast(database_path: Path, today: Optional[date] = None) -> dict[str, dic
     `money_plan`, one row per forecast year; the other entities' is an empty list.
     """
     context = _load(database_path, today or date.today())
-    lines, assumptions, indexes = _project(context)
-    closings, flags = _balances(context, lines, assumptions)
+    lines, assumptions, indexes, closings, flags = _projection(context)
     backtests = _run_backtests(context, indexes)
     return {
         name: _entity_slice(

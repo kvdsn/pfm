@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from .database import connect, format_money
-from .forecast import _balances, _Context, _load, _month_end, _project, _role, _round_cents
+from .forecast import _Context, _load, _month_end, _projection, _role, _round_cents
 from .forecast_settings import load_settings
 from .planned import add_planned, link_planned
 from .recurring import _signed_cents
@@ -90,8 +90,7 @@ def director_loan(database_path: Path, today: Optional[date] = None) -> dict[str
     """The loan's movements with their running balance, and per year: the transfers, the year-end balance, the
     interest accrued and the interest paid, planned and still unpaid."""
     context = _load(database_path, today or date.today())
-    lines, _, _ = _project(context)
-    _balances(context, lines, {name: [] for name in context.entities})
+    lines = _projection(context)[0]
     settings = context.settings
     start = date.fromisoformat(settings["loan_start"])
     rate = Decimal(str(settings["loan_interest_rate"]))
@@ -140,7 +139,7 @@ def director_loan(database_path: Path, today: Optional[date] = None) -> dict[str
             "projected": movement["projected"], "reserve": movement["reserve"], "balance": format_money(running),
         })
     return {
-        "start": start.isoformat(), "rate": settings["loan_interest_rate"],
+        "start": start.isoformat(), "rate": settings["loan_interest_rate"], "auto": bool(settings["loan_interest_auto"]),
         "balance": format_money(sum(m["cents"] for m in movements if not m["projected"])),
         "interest_to_date": format_money(_round_cents(sum(to_date.values(), Decimal(0)))),
         "interest_paid": format_money(sum(p["cents"] for p in payments if not p["projected"])),

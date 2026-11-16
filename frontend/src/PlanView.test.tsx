@@ -22,7 +22,7 @@ const settings: ForecastSettings = {
   personal_min_balance: "2000.00", business_buffer: "2000.00", payment_delay_months: 1, vat_rate: 21, vat_delay_months: 1,
   vat_day: 15, baseline_months: 6, baseline_weighted: false, one_off_factor: 3, salary_net_percent: 0, reimbursement_delay_days: 30,
   tax_reduced_threshold: "51000.00", tax_reduced_rate: 20, tax_reduced_band: "100000.00", tax_standard_rate: 25,
-  tax_base_rate: 3, tax_surcharge_applies: true, tax_profit_excluded: [], loan_start: "2026-01-01", loan_interest_rate: 3.5,
+  tax_base_rate: 3, tax_surcharge_applies: true, tax_profit_excluded: [], loan_start: "2026-01-01", loan_interest_rate: 3.5, loan_interest_auto: false,
   forecast_end_year: 0, buffer_months: [{ year: 2026, months: 3 }], buffer_month_cost: "0.00", dividend_withholding_rate: 25,
   liquidation_reserves: [{ label: "Old", amount: "10000.00", payable: "2027-01-01", rate: 5 }], reserve_share: 0,
   reserve_tax_rate: 10, reserve_wait_years: 3, reserve_payout_rate: 6.5,
@@ -459,6 +459,15 @@ describe("PlanView corporate tax", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(calls("POST")).toHaveLength(0);
+  });
+
+  it("sends the automatic interest setting from the loan rules", async () => {
+    await renderView();
+    const loan = section("Director loan");
+    fireEvent.click(loan.getByLabelText("Plan the interest automatically each 31 December"));
+    fireEvent.click(loan.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls("PUT")).toHaveLength(1));
+    expect(calls("PUT")[0][1].json).toEqual({ loan_interest_auto: true });
   });
 
   it("shows the director loan and saves only the changed loan rules", async () => {

@@ -174,6 +174,7 @@ class ForecastSettingsUpdate(BaseModel):
     tax_profit_excluded: Optional[list[int]] = None
     loan_start: Optional[str] = None
     loan_interest_rate: Optional[float] = None
+    loan_interest_auto: Optional[bool] = None
     forecast_end_year: Optional[int] = None
     buffer_months: Optional[list[dict[str, Any]]] = None
     buffer_month_cost: Union[str, int, float, None] = None

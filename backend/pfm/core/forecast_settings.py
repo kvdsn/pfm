@@ -38,6 +38,8 @@ DEFAULTS: dict[str, Any] = {
     # The director loan: Entity transfers to Personal from this date on, with simple interest at this rate.
     "loan_start": "2026-01-01",
     "loan_interest_rate": 3.5,
+    # Plan each year's interest on 31 December from the forecast, instead of as planned items.
+    "loan_interest_auto": False,
     # The last forecast year; 0 means next year. Otherwise next year to the current year + 9.
     "forecast_end_year": 0,
     # Business's year-end target in months of costs: [{"year", "months"}], each in force until the next.
@@ -259,9 +261,9 @@ def _validated_changes(db: sqlite3.Connection, changes: dict[str, Any], current:
             valid[key] = _number(value, "Salary net percent", 0, 100)
         elif key == "one_off_factor":
             valid[key] = _number(value, "One-off factor", 1)
-        elif key == "baseline_weighted":
+        elif key in ("baseline_weighted", "loan_interest_auto"):
             if not isinstance(value, bool):
-                raise ValueError("Baseline weighted must be true or false")
+                raise ValueError(f"{key.replace('_', ' ').capitalize()} must be true or false")
             valid[key] = value
         elif key == "roles":
             if not isinstance(value, dict) or any(role not in ROLES for role in value):
