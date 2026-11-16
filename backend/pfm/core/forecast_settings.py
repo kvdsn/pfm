@@ -136,7 +136,8 @@ def _category_id_by_name(db: sqlite3.Connection, account_type: str, name: str) -
 
 
 def load_settings(db: sqlite3.Connection) -> dict[str, Any]:
-    """Every setting with defaults filled in; money in cents, `roles` and `closed_categories` as category ids."""
+    """Every setting with defaults filled in; money in cents, `roles`, `closed_categories` and `yearly_categories`
+    as category ids."""
     stored = _stored(db)
     settings = {key: stored.get(key, default) for key, default in DEFAULTS.items()}
     settings["tax_profit_excluded"] = list(settings["tax_profit_excluded"])
@@ -153,6 +154,8 @@ def load_settings(db: sqlite3.Connection) -> dict[str, Any]:
             for entity, names in DEFAULT_CLOSED.items()
         }
     settings["closed_categories"] = {entity: list(saved_closed.get(entity, [])) for entity in ACCOUNT_TYPES}
+    saved_yearly = stored.get("yearly_categories", {})
+    settings["yearly_categories"] = {entity: list(saved_yearly.get(entity, [])) for entity in ACCOUNT_TYPES}
     return settings
 
 
@@ -236,15 +239,16 @@ def _validated_changes(db: sqlite3.Connection, changes: dict[str, Any], current:
             for role, category_id in value.items():
                 roles[role] = None if category_id is None else _check_category(db, ROLES[role][0], category_id, role)
             valid[key] = roles
-        elif key == "closed_categories":
+        elif key in ("closed_categories", "yearly_categories"):
+            label = "Closed" if key == "closed_categories" else "Yearly"
             if not isinstance(value, dict) or any(entity not in ACCOUNT_TYPES for entity in value):
-                raise ValueError("Closed categories must be listed per account type")
-            closed = {entity: list(ids) for entity, ids in current["closed_categories"].items()}
+                raise ValueError(f"{label} categories must be listed per account type")
+            listed = {entity: list(ids) for entity, ids in current[key].items()}
             for entity, ids in value.items():
                 if not isinstance(ids, list):
-                    raise ValueError("Closed categories must be lists of category ids")
-                closed[entity] = sorted({_check_category(db, entity, cid, "A closed category") for cid in ids})
-            valid[key] = closed
+                    raise ValueError(f"{label} categories must be lists of category ids")
+                listed[entity] = sorted({_check_category(db, entity, cid, f"A {label.lower()} category") for cid in ids})
+            valid[key] = listed
         else:
             raise ValueError(f"Unknown setting: {key}")
     return valid
@@ -272,12 +276,13 @@ def remap_settings_category(db: sqlite3.Connection, source_id: int, target_id: O
             elif category_id == source_id:
                 roles[role] = target_id
         _save(db, "roles", roles)
-    closed = settings["closed_categories"]
-    if any(source_id in ids for ids in closed.values()):
-        _save(db, "closed_categories", {
-            entity: list(dict.fromkeys(target_id if cid == source_id else cid for cid in ids if cid != source_id or target_id))
-            for entity, ids in closed.items()
-        })
+    for key in ("closed_categories", "yearly_categories"):
+        listed = settings[key]
+        if any(source_id in ids for ids in listed.values()):
+            _save(db, key, {
+                entity: list(dict.fromkeys(target_id if cid == source_id else cid for cid in ids if cid != source_id or target_id))
+                for entity, ids in listed.items()
+            })
     if source_id in settings["tax_profit_excluded"]:
         _save(db, "tax_profit_excluded", list(dict.fromkeys(
             target_id if cid == source_id else cid for cid in settings["tax_profit_excluded"] if cid != source_id or target_id

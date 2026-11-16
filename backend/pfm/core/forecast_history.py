@@ -17,6 +17,7 @@ from .forecast import (
     TOLERANCE_CENTS,
     _balances,
     _band,
+    _base_cents,
     _baseline_index,
     _category_baselines,
     _Context,
@@ -187,13 +188,14 @@ def _baseline_errors(context: _Context, entity: str) -> dict[int, list[int]]:
     errors: dict[int, list[int]] = defaultdict(list)
     for origin in _origins(context, index):
         bases, _ = _category_baselines(
-            index, origin, settings["baseline_months"], settings["baseline_weighted"], settings["one_off_factor"]
+            index, origin, settings["baseline_months"], settings["baseline_weighted"], settings["one_off_factor"],
+            settings["yearly_categories"][entity],
         )
         for category, by_month in index.by_category.items():
             base = bases.get(category)
             threshold = base.threshold if base else None
             actual = sum(t["cents"] for t in by_month.get(origin, ()) if threshold is None or abs(t["cents"]) <= threshold)
-            errors[category].append(actual - (base.cents if base else 0))
+            errors[category].append(actual - (_base_cents(base, origin) if base else 0))
     return errors
 
 

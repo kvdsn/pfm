@@ -29,6 +29,7 @@ const settings: ForecastSettings = {
     transfer_business: null, transfer_personal: null, loan_interest_business: null, loan_interest_personal: null,
   },
   closed_categories: { personal: [], business: [44], kids: [] },
+  yearly_categories: { personal: [], business: [], kids: [] },
 };
 const forecast = {
   account_type: "business", today: "2026-10-25",
@@ -367,13 +368,19 @@ describe("PlanView salary, consulting and settings", () => {
     const baselines = section("Baselines");
     // The models' own categories never get a baseline, so they are not offered.
     expect(baselines.queryByLabelText("VAT")).not.toBeInTheDocument();
-    expect(baselines.getByLabelText("Housing")).toBeChecked();
-    fireEvent.click(baselines.getByLabelText("Housing"));
-    fireEvent.click(baselines.getByLabelText("Travel & meals"));
+    const closed = within(baselines.getByRole("group", { name: /Closed categories/ }));
+    const yearly = within(baselines.getByRole("group", { name: /Yearly categories/ }));
+    expect(closed.getByLabelText("Housing")).toBeChecked();
+    expect(yearly.getByLabelText("Housing")).not.toBeChecked();
+    fireEvent.click(closed.getByLabelText("Housing"));
+    fireEvent.click(closed.getByLabelText("Travel & meals"));
+    fireEvent.click(yearly.getByLabelText("Travel & meals"));
     fireEvent.click(baselines.getByLabelText(/Weighted/));
     fireEvent.click(baselines.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls("PUT")).toHaveLength(1));
-    expect(calls("PUT")[0][1].json).toEqual({ baseline_weighted: true, closed_categories: { business: [45] } });
+    expect(calls("PUT")[0][1].json).toEqual({
+      baseline_weighted: true, closed_categories: { business: [45] }, yearly_categories: { business: [45] },
+    });
   });
 
   it("lists the one-offs and the backtest", async () => {

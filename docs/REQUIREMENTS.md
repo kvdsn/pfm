@@ -84,7 +84,7 @@ The forecast runs from the current month to December of next year, or of a later
 - **Salary:** a yearly schedule (monthly amount, last month, optional minimum afterwards), booked as Director remuneration in Business. Personal receives its net share.
 - **Entity transfers:** each month they top Personal up to its minimum balance (€2,000 by default), without taking Business below its buffer (€2,000). A month that falls short is flagged.
 - **Reimbursements:** open claims of what Business owes Personal, repaid after 30 days by default.
-- **Baselines:** every other category's median of its last 6 complete months, leaving out recurring payments and one-offs above 3× its typical month. You can mark a category as closed to give it no baseline.
+- **Baselines:** every other category's median of its last 6 complete months, leaving out recurring payments and one-offs above 3× its typical month. You can mark a category as closed to give it no baseline, or as yearly for lumpy costs such as travel: each month then repeats what that category cost in the same month over the last 12 complete months, with nothing left out as a one-off.
 - **Range:** a rolling backtest gives the balance a low and high band.
 
 The Forecast page also estimates these:

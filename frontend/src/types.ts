@@ -426,6 +426,7 @@ export type ForecastSettings = {
   dividend_withholding_rate: number;
   roles: Record<ForecastRole, number | null>;
   closed_categories: Record<AccountType, number[]>;
+  yearly_categories: Record<AccountType, number[]>;
 };
 export type TaxDeadline = { date: string; prepaid: string; planned: string; advised: string; past: boolean };
 /** Business's corporate tax estimate for a year; see GET /api/forecast/corporate-tax. */

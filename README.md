@@ -81,7 +81,7 @@ The **Forecast** page holds what the projection is based on:
 - **Consulting:** income from days worked × day rate, the VAT on it, your days off, and a check of past payments.
 - **Corporate tax:** an estimate with advised prepayments. It is an estimate, not tax advice.
 - **Director loan** and **reimbursements** between Business and Personal.
-- **Baselines:** each other category's usual month, from the median of recent months.
+- **Baselines:** each other category's usual month, from the median of recent months. A lumpy category, such as travel, can be marked yearly to repeat last year's months instead.
 - **Forecast vs reality:** for Personal and Business, how far off the forecast was. It shows the typical month-end miss, whether this month's spending runs ahead of pace, and the biggest misses with a hint about what to adjust. The year table and graph show the same differences while the Forecast switch is on.
 
 ### Accounts and backups

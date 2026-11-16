@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from statistics import median
-from typing import Any, NamedTuple, Optional
+from typing import Any, Collection, NamedTuple, Optional
 
 from .database import ACCOUNT_TYPES, UNCATEGORIZED, connect, format_money, masked_iban
 from .forecast_settings import (
@@ -391,12 +391,30 @@ class _Index:
 
     by_category: dict[int, dict[int, list[dict[str, Any]]]]
     first: Optional[int]  # month of the entity's first transaction
+    entity: str = ""
 
 
 class _Base(NamedTuple):
-    cents: int
+    cents: int  # the monthly baseline; for a yearly category, its total over the last 12 months
     threshold: Optional[float]  # a transaction above it is a one-off
     one_offs: list[dict[str, Any]]
+    by_month: Optional[dict[int, int]] = None  # a yearly category: calendar month (0-11) -> what it cost a year earlier
+
+
+def _base_cents(base: _Base, month: int) -> int:
+    """The baseline of a month index: a yearly category's same calendar month a year earlier, otherwise the median."""
+    return base.cents if base.by_month is None else base.by_month.get(month % 12, 0)
+
+
+def _yearly_base(by_month: dict[int, list[dict[str, Any]]], end: int, first: int) -> Optional[_Base]:
+    """A yearly category's baseline from the 12 complete months before month `end`: each calendar month what it
+    cost then, with nothing left out as a one-off, and never of the opposite sign to the year's total."""
+    totals = {month: sum(t["cents"] for t in by_month.get(month, ())) for month in range(end - 12, end) if month > first}
+    year = sum(totals.values())
+    if not year:
+        return None
+    clamp = (lambda cents: min(cents, 0)) if year < 0 else (lambda cents: max(cents, 0))
+    return _Base(year, None, [], {month % 12: clamp(cents) for month, cents in totals.items()})
 
 
 def _baseline_index(context: _Context, entity: str) -> _Index:
@@ -414,7 +432,7 @@ def _baseline_index(context: _Context, entity: str) -> _Index:
             continue
         by_category.setdefault(transaction["category_id"], {}).setdefault(_index(transaction["date"]), []).append(transaction)
     first = _index(data.transactions[0]["date"]) if data.transactions else None
-    return _Index(by_category, first)
+    return _Index(by_category, first, entity)
 
 
 def _weighted_median(values: list[int], weights: list[int]) -> int:
@@ -427,12 +445,13 @@ def _weighted_median(values: list[int], weights: list[int]) -> int:
 
 
 def _category_baselines(
-    index: _Index, end: int, months: int, weighted: bool, factor: float
+    index: _Index, end: int, months: int, weighted: bool, factor: float, yearly: Collection[int] = (),
 ) -> tuple[dict[int, _Base], int]:
     """Each category's baseline from the complete months before month `end`, and how many months were used.
 
     The baseline is the median monthly total, or the recency-weighted median over 12 months. A transaction
-    above `factor` times the median absolute monthly total is a one-off and left out.
+    above `factor` times the median absolute monthly total is a one-off and left out. A `yearly` category instead
+    repeats what each calendar month cost over the last 12 months.
     """
     window = [] if index.first is None else [
         month for month in range(end - 1, end - 1 - (12 if weighted else months), -1) if month > index.first
@@ -440,6 +459,11 @@ def _category_baselines(
     weights = [13 - back for back in range(1, len(window) + 1)]
     bases: dict[int, _Base] = {}
     for category, by_month in index.by_category.items():
+        if category in yearly:
+            base = None if index.first is None else _yearly_base(by_month, end, index.first)
+            if base is not None:
+                bases[category] = base
+            continue
         totals = [sum(t["cents"] for t in by_month.get(month, ())) for month in window]
         typical = median(abs(total) for total in totals) if totals else 0
         threshold = factor * typical if typical > 0 else None
@@ -456,7 +480,8 @@ def _category_baselines(
 def _current_baselines(context: _Context, index: _Index) -> tuple[dict[int, _Base], int]:
     settings = context.settings
     return _category_baselines(
-        index, context.current, settings["baseline_months"], settings["baseline_weighted"], settings["one_off_factor"]
+        index, context.current, settings["baseline_months"], settings["baseline_weighted"], settings["one_off_factor"],
+        context.settings["yearly_categories"][index.entity],
     )
 
 
@@ -466,13 +491,14 @@ def _baseline_lines(context: _Context, entity: str, index: _Index, lines: Lines)
     detail = f"{'Weighted median' if context.settings['baseline_weighted'] else 'Median'} of the last {used} months"
     for category, base in sorted(bases.items()):
         for month in context.months:
-            cents = base.cents
+            cents = _base_cents(base, month)
             if month == context.current:
                 booked = sum(t["cents"] for t in index.by_category[category].get(month, ()))
-                cents = base.cents - booked
+                cents = cents - booked
                 cents = min(cents, 0) if base.cents < 0 else max(cents, 0)
             if cents:
-                _add(lines, entity, month, category, cents, "baseline", None, detail)
+                _add(lines, entity, month, category, cents, "baseline", None,
+                     "Same month a year earlier (yearly category)" if base.by_month is not None else detail)
 
 
 def _one_offs(context: _Context, entity: str, index: _Index) -> list[dict[str, Any]]:
@@ -546,7 +572,9 @@ def _backtest_errors(context: _Context, index: _Index, variant: tuple[int, bool]
     months, weighted = variant
     errors: dict[int, list[int]] = {}
     for origin in _origins(context, index):
-        bases, _ = _category_baselines(index, origin, months, weighted, context.settings["one_off_factor"])
+        bases, _ = _category_baselines(
+            index, origin, months, weighted, context.settings["one_off_factor"], context.settings["yearly_categories"][index.entity]
+        )
         cumulative = 0
         for horizon in range(1, BACKTEST_HORIZONS + 1):
             month = origin + horizon - 1
@@ -555,7 +583,7 @@ def _backtest_errors(context: _Context, index: _Index, variant: tuple[int, bool]
             for category, by_month in index.by_category.items():
                 base = bases.get(category, _Base(0, None, []))
                 actual = sum(t["cents"] for t in by_month.get(month, ()) if base.threshold is None or abs(t["cents"]) <= base.threshold)
-                cumulative += actual - base.cents
+                cumulative += actual - _base_cents(base, month)
             errors.setdefault(horizon, []).append(cumulative)
     return errors
 

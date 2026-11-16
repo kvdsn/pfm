@@ -65,6 +65,8 @@ type Field =
   | { kind: "checkbox"; key: keyof ForecastSettings; label: string }
   /** This entity's closed categories: left out of the baseline. */
   | { kind: "closed"; label: string }
+  /** This entity's yearly categories: each month repeats what it cost a year earlier. */
+  | { kind: "yearly"; label: string }
   /** The Business categories left out of the tax profit. */
   | { kind: "excluded"; label: string }
   /** The categories the models book in, for the given roles. */
@@ -73,13 +75,15 @@ type Field =
 type Draft = Record<string, unknown>;
 type BufferRow = { year: string; months: string };
 const fieldId = (field: Field) => (
-  field.kind === "closed" || field.kind === "excluded" || field.kind === "roles" || field.kind === "buffer" ? field.kind : String(field.key)
+  field.kind === "closed" || field.kind === "yearly" || field.kind === "excluded" || field.kind === "roles" || field.kind === "buffer"
+    ? field.kind : String(field.key)
 );
 
 function initialDraft(fields: Field[], settings: ForecastSettings, accountType: AccountType): Draft {
   const draft: Draft = {};
   for (const field of fields) {
     if (field.kind === "closed") draft.closed = [...settings.closed_categories[accountType]].sort((a, b) => a - b);
+    else if (field.kind === "yearly") draft.yearly = [...(settings.yearly_categories?.[accountType] ?? [])].sort((a, b) => a - b);
     else if (field.kind === "excluded") draft.excluded = [...settings.tax_profit_excluded].sort((a, b) => a - b);
     else if (field.kind === "roles") draft.roles = Object.fromEntries(field.roles.map((role) => [role, settings.roles[role]]));
     else if (field.kind === "buffer") draft.buffer = settings.buffer_months.map((row): BufferRow => ({ year: String(row.year), months: String(row.months) }));
@@ -96,6 +100,7 @@ function changesOf(fields: Field[], draft: Draft, initial: Draft, accountType: A
     const id = fieldId(field);
     if (JSON.stringify(draft[id]) === JSON.stringify(initial[id])) continue;
     if (field.kind === "closed") changes.closed_categories = { [accountType]: draft.closed };
+    else if (field.kind === "yearly") changes.yearly_categories = { [accountType]: draft.yearly };
     else if (field.kind === "excluded") changes.tax_profit_excluded = draft.excluded;
     else if (field.kind === "roles") {
       const before = initial.roles as Record<string, number | null>;
@@ -156,8 +161,8 @@ function SettingsForm({
             </label>
           );
         }
-        if (field.kind === "closed" || field.kind === "excluded") {
-          const id = field.kind === "closed" ? "closed" : "excluded";
+        if (field.kind === "closed" || field.kind === "yearly" || field.kind === "excluded") {
+          const id = field.kind;
           const closed = draft[id] as number[];
           return (
             <fieldset key={id}>
@@ -716,6 +721,7 @@ export function PlanView({
     { kind: "checkbox", key: "baseline_weighted", label: "Weighted: recent months count more" },
     { kind: "number", key: "one_off_factor", label: "One-off factor", help: "A transaction this many times the typical month is a one-off and left out" },
     { kind: "closed", label: "Closed categories: left out of the baseline" },
+    { kind: "yearly", label: "Yearly categories: each month repeats what it cost a year earlier" },
   ], [endYearOptions]);
   const taxFields: Field[] = useMemo(() => [
     { kind: "text", key: "tax_reduced_threshold", label: "Director remuneration for the reduced rate", help: "The year's remuneration must reach this" },
