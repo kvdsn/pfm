@@ -96,7 +96,7 @@ The Forecast page also estimates these:
   - **Settings:** all of these rules are settings, to confirm with your accountant.
 - **Money plan** (Business):
   - **Buffer target:** months of costs at each year end, each in force until the next one you set.
-  - **A month of costs:** the year's average monthly Business outflow from recurring payments, salary, Entity transfers and baselines, without VAT, corporate tax, dividends and planned items. A current year with fewer than 3 projected months uses next year's. A fixed amount can replace it.
+  - **A month of costs:** the year's average monthly Business outflow from recurring payments, salary, Entity transfers and baselines, without VAT, corporate tax, dividends and planned items. The transfers count without what pays for Personal's planned expenses. A current year with fewer than 3 projected months uses next year's. A fixed amount can replace it.
   - **Per year:** the year-end balance, the target, the room above it, the room net of withholding, the net room added that year, the lowest month-end and the dividends paid.
   - The Business buffer for Entity transfers stays a separate floor.
 - **Director loan:** Entity transfers from the loan start count as a loan to the director. It carries simple daily interest (3.5% by default), never on a negative balance. Liquidation reserve payouts pay it down, and it may go below zero.

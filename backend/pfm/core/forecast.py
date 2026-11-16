@@ -818,18 +818,27 @@ COST_SOURCES = ("recurring", "salary", "transfer", "baseline")  # what makes up 
 
 def _derived_month_costs(context: _Context, lines: Lines) -> dict[int, int]:
     """Per forecast year, Business's average monthly outflow in cents (positive) over the year's projected months,
-    from recurring, salary, transfer and baseline lines without VAT, corporate tax and dividends. The current year
-    with fewer than 3 projected months takes next year's figure. Run after the balance walk, so transfers count."""
+    from recurring, salary, transfer and baseline lines without VAT, corporate tax and dividends. The transfers count
+    without what pays for Personal's planned expenses that year, so one-off purchases don't raise the month. The
+    current year with fewer than 3 projected months takes next year's figure. Run after the balance walk, so
+    transfers count."""
     left_out = {_role(context, role) for role in ("vat", "corporate_tax", "dividend_business")}
     totals: dict[int, int] = {}
+    transfers: dict[int, int] = {}
+    planned: dict[int, int] = {}
     counts: dict[int, int] = {}
     for month in context.months:
         year = month // 12
         counts[year] = counts.get(year, 0) + 1
-        totals[year] = totals.get(year, 0) - sum(
-            line["amount"] for line in lines["business"].get(month, [])
-            if line["source"] in COST_SOURCES and line["amount"] < 0 and line["category_id"] not in left_out
+        for line in lines["business"].get(month, []):
+            if line["source"] in COST_SOURCES and line["amount"] < 0 and line["category_id"] not in left_out:
+                bucket = transfers if line["source"] == "transfer" else totals
+                bucket[year] = bucket.get(year, 0) - line["amount"]
+        planned[year] = planned.get(year, 0) - sum(
+            line["amount"] for line in lines["personal"].get(month, []) if line["source"] == "planned" and line["amount"] < 0
         )
+    for year in counts:
+        totals[year] = totals.get(year, 0) + max(0, transfers.get(year, 0) - planned.get(year, 0))
     costs = {year: _round_cents(Decimal(totals[year]) / counts[year]) for year in totals}
     this_year = context.today.year
     if counts[this_year] < 3 and this_year + 1 in costs:

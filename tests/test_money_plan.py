@@ -243,6 +243,17 @@ class BuyerPlanTests(MoneyPlanFixture):
         # Three salary-free outflows alone would be lower: the salary is in it.
         self.assertGreater(float(row["month_cost"]), 3000)
 
+    def test_transfers_that_pay_for_personal_purchases_dont_raise_the_month_cost(self):
+        before = float(self.plan()[2027]["month_cost"])
+        transfers_before = self.transfers_2027()
+        core.add_planned(self.database, "personal", "2027-03-10", -20000, None, "Kitchen")
+        # The purchase is paid by a bigger transfer, but the month of costs stays the same.
+        self.assertGreater(self.transfers_2027(), transfers_before)
+        self.assertEqual(float(self.plan()[2027]["month_cost"]), before)
+
+    def transfers_2027(self):
+        return -sum(float(line["amount"]) for month, line in self.all_lines("business", "transfer") if month.startswith("2027"))
+
     def test_the_current_year_with_few_months_left_uses_next_years_cost(self):
         late = self.plan(date(2026, 11, 20))
         self.assertEqual(late[2026]["month_cost"], late[2027]["month_cost"])
