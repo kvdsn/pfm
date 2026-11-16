@@ -408,13 +408,15 @@ def _base_cents(base: _Base, month: int) -> int:
 
 def _yearly_base(by_month: dict[int, list[dict[str, Any]]], end: int, first: int) -> Optional[_Base]:
     """A yearly category's baseline from the 12 complete months before month `end`: each calendar month what it
-    cost then, with nothing left out as a one-off, and never of the opposite sign to the year's total."""
+    cost then, with nothing left out as a one-off. A month of the opposite sign to the year's total, such as a
+    refund, becomes zero, and the other months are scaled down so the year still adds up to its total."""
     totals = {month: sum(t["cents"] for t in by_month.get(month, ())) for month in range(end - 12, end) if month > first}
     year = sum(totals.values())
     if not year:
         return None
-    clamp = (lambda cents: min(cents, 0)) if year < 0 else (lambda cents: max(cents, 0))
-    return _Base(year, None, [], {month % 12: clamp(cents) for month, cents in totals.items()})
+    kept = {month % 12: cents if (cents < 0) == (year < 0) else 0 for month, cents in totals.items()}
+    share = Decimal(year) / sum(kept.values())
+    return _Base(year, None, [], {month: _round_cents(cents * share) for month, cents in kept.items()})
 
 
 def _baseline_index(context: _Context, entity: str) -> _Index:

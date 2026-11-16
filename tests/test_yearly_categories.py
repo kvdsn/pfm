@@ -30,14 +30,17 @@ class YearlyCategoryTests(ForecastFixture):
 
     def test_a_yearly_category_repeats_each_month_of_the_last_twelve(self):
         self.yearly([self.cat["personal", "Holidays"]])
-        self.assertEqual(self.holidays("2027-07"), -1500)
-        self.assertEqual(self.holidays("2027-02"), -900)
-        self.assertEqual(self.holidays("2027-08"), -40)
-        self.assertEqual(self.holidays("2027-03"), 0)
-        # A refund doesn't turn into income; the window is October 2025 to September 2026.
+        # The window is October 2025 to September 2026: −2,940 in all. The December refund of 100 doesn't turn
+        # into income; the other months are scaled by 2,840 / 2,940 so the year still adds up.
         self.assertEqual(self.holidays("2026-12"), 0)
-        self.assertEqual(self.holidays("2027-10"), -500)
-        self.assertEqual(self.holidays("2026-10"), -500)  # nothing booked yet this month
+        self.assertEqual(self.holidays("2027-07"), -1448.98)
+        self.assertEqual(self.holidays("2027-02"), -869.39)
+        self.assertEqual(self.holidays("2027-08"), -38.64)
+        self.assertEqual(self.holidays("2027-03"), 0)
+        self.assertEqual(self.holidays("2027-10"), -482.99)
+        self.assertEqual(self.holidays("2026-10"), -482.99)  # nothing booked yet this month
+        year = sum(self.holidays(f"2027-{month:02d}") for month in range(1, 13))
+        self.assertAlmostEqual(year, -2840, places=1)
         line = next(line for line in self.lines("personal", "2027-07", "baseline") if line["category"] == "Holidays")
         self.assertEqual(line["detail"], "Same month a year earlier (yearly category)")
 
