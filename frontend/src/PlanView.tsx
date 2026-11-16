@@ -41,6 +41,8 @@ const ROLES: Record<ForecastRole, { entity: AccountType; label: string }> = {
   transfer_personal: { entity: "personal", label: "Transfer from Business" },
   loan_interest_business: { entity: "business", label: "Director loan interest received" },
   loan_interest_personal: { entity: "personal", label: "Director loan interest paid" },
+  reserve_tax: { entity: "business", label: "Liquidation reserve tax" },
+  reserve_withholding: { entity: "business", label: "Liquidation reserve withholding" },
 };
 const REPEAT_CHOICES: [number, string][] = [[0, "No"], [1, "Every week"], [2, "Every 2 weeks"], [3, "Every 3 weeks"], [4, "Every 4 weeks"]];
 const repeatLabel = (item: DayOff) => {
@@ -62,6 +64,8 @@ type Field =
   | { kind: "select"; key: keyof ForecastSettings; label: string; options: [number, string][] }
   /** Business's buffer target: rows of a year and months of costs. */
   | { kind: "buffer"; label: string }
+  /** The liquidation reserves already formed: label, amount, payable date and withholding rate. */
+  | { kind: "reserves"; label: string }
   | { kind: "checkbox"; key: keyof ForecastSettings; label: string }
   /** This entity's closed categories: left out of the baseline. */
   | { kind: "closed"; label: string }
@@ -74,8 +78,9 @@ type Field =
 
 type Draft = Record<string, unknown>;
 type BufferRow = { year: string; months: string };
+type ReserveRow = { label: string; amount: string; payable: string; rate: string };
 const fieldId = (field: Field) => (
-  field.kind === "closed" || field.kind === "yearly" || field.kind === "excluded" || field.kind === "roles" || field.kind === "buffer"
+  field.kind === "closed" || field.kind === "yearly" || field.kind === "excluded" || field.kind === "roles" || field.kind === "buffer" || field.kind === "reserves"
     ? field.kind : String(field.key)
 );
 
@@ -87,7 +92,11 @@ function initialDraft(fields: Field[], settings: ForecastSettings, accountType: 
     else if (field.kind === "excluded") draft.excluded = [...settings.tax_profit_excluded].sort((a, b) => a - b);
     else if (field.kind === "roles") draft.roles = Object.fromEntries(field.roles.map((role) => [role, settings.roles[role]]));
     else if (field.kind === "buffer") draft.buffer = settings.buffer_months.map((row): BufferRow => ({ year: String(row.year), months: String(row.months) }));
-    else if (field.kind === "checkbox") draft[String(field.key)] = Boolean(settings[field.key]);
+    else if (field.kind === "reserves") {
+      draft.reserves = (settings.liquidation_reserves ?? []).map((row): ReserveRow => ({
+        label: row.label, amount: row.amount, payable: row.payable, rate: String(row.rate),
+      }));
+    } else if (field.kind === "checkbox") draft[String(field.key)] = Boolean(settings[field.key]);
     else draft[String(field.key)] = String(settings[field.key]);
   }
   return draft;
@@ -111,6 +120,13 @@ function changesOf(fields: Field[], draft: Draft, initial: Draft, accountType: A
       changes.buffer_months = (draft.buffer as BufferRow[])
         .filter((row) => row.year.trim() !== "" || row.months.trim() !== "")
         .map((row) => ({ year: asNumber(row.year.trim()), months: asNumber(row.months.trim()) }));
+    } else if (field.kind === "reserves") {
+      changes.liquidation_reserves = (draft.reserves as ReserveRow[])
+        .filter((row) => Object.values(row).some((text) => text.trim() !== ""))
+        .map((row) => ({
+          label: row.label.trim(), amount: row.amount.trim(), payable: row.payable.trim(),
+          rate: row.rate.trim() !== "" && !Number.isNaN(Number(row.rate)) ? Number(row.rate) : row.rate.trim(),
+        }));
     } else if (field.kind === "select") {
       changes[String(field.key)] = Number(draft[id]);
     } else if (field.kind === "number") {
@@ -209,6 +225,38 @@ function SettingsForm({
                 {field.options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
               </select>
             </label>
+          );
+        }
+        if (field.kind === "reserves") {
+          const rows = draft.reserves as ReserveRow[];
+          const update = (index: number, patch: Partial<ReserveRow>) =>
+            set("reserves", rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
+          return (
+            <fieldset key="reserves">
+              <legend>{field.label}</legend>
+              <div className="plan-buffer">
+                {rows.map((row, index) => (
+                  <div className="plan-buffer-row plan-reserve-row" key={index}>
+                    <label>Label
+                      <input type="text" value={row.label} onChange={(event) => update(index, { label: event.target.value })} />
+                    </label>
+                    <label>Amount
+                      <input type="text" inputMode="decimal" value={row.amount} onChange={(event) => update(index, { amount: event.target.value })} />
+                    </label>
+                    <label>Payable from
+                      <input type="date" value={row.payable} onChange={(event) => update(index, { payable: event.target.value })} />
+                    </label>
+                    <label>Withholding (%)
+                      <input type="text" inputMode="decimal" value={row.rate} onChange={(event) => update(index, { rate: event.target.value })} />
+                    </label>
+                    <button type="button" className="button secondary" aria-label={`Remove reserve ${index + 1}`} onClick={() => set("reserves", rows.filter((_, at) => at !== index))}>Remove</button>
+                  </div>
+                ))}
+                <div>
+                  <button type="button" className="button secondary" onClick={() => set("reserves", [...rows, { label: "", amount: "", payable: "", rate: "6.5" }])}>Add reserve</button>
+                </div>
+              </div>
+            </fieldset>
           );
         }
         if (field.kind === "buffer") {
@@ -714,6 +762,11 @@ export function PlanView({
     { kind: "buffer", label: "Buffer target at the end of each year" },
     { kind: "text", key: "buffer_month_cost", label: "Fixed month of costs", blank: "0", help: "Leave empty or 0 to work it out from the forecast" },
     { kind: "number", key: "dividend_withholding_rate", label: "Dividend withholding (%)" },
+    { kind: "reserves", label: "Liquidation reserves already formed" },
+    { kind: "number", key: "reserve_share", label: "New reserve (% of profit after tax)", help: "Each year from this one on; 0 forms none" },
+    { kind: "number", key: "reserve_tax_rate", label: "Tax on forming a reserve (%)" },
+    { kind: "number", key: "reserve_wait_years", label: "Years to wait", help: "A reserve formed on the accounts of a year is payable from 1 January, this many years later plus one" },
+    { kind: "number", key: "reserve_payout_rate", label: "Withholding on a new reserve's payout (%)" },
   ], []);
   const baselineFields: Field[] = useMemo(() => [
     { kind: "select", key: "forecast_end_year", label: "Forecast to", options: endYearOptions },
@@ -782,14 +835,15 @@ export function PlanView({
       {isBusiness && settings && (
         <section className="panel plan-panel" aria-label="Money plan">
           <h4 className="plan-heading">Money plan</h4>
-          <p className="muted small">What Business keeps above its buffer target at the end of each year, and what that is worth as a dividend.</p>
+          <p className="muted small">What Business keeps above its buffer target at the end of each year, and what that is worth as a dividend. Up to the liquidation reserve, the room is worth its payout (net of the reserves' withholding) rather than a dividend.</p>
           {forecast?.money_plan && forecast.money_plan.length > 0 ? (
             <div className="table-scroll">
               <table className="rules-table plan-table money-plan-table" aria-label="Money plan">
                 <thead>
                   <tr>
-                    <th>Year</th><th className="numeric">Year end</th><th className="numeric">Month of costs</th><th className="numeric">Target</th>
+                    <th>Year</th><th className="numeric">Year end</th><th className="numeric">Target</th>
                     <th className="numeric">Room</th><th className="numeric">Room, net</th><th className="numeric">New, net</th>
+                    <th className="numeric">Reserve</th><th className="numeric">Director loan</th>
                     <th className="numeric">Lowest</th><th className="numeric">Dividends, net</th>
                   </tr>
                 </thead>
@@ -799,16 +853,15 @@ export function PlanView({
                       <td className="nowrap">{row.year}</td>
                       <td className="numeric">{money(row.closing)}</td>
                       <td className="numeric">
-                        {money(row.month_cost)}
-                        <div className="muted small">{row.month_cost_derived ? "derived" : "fixed"}</div>
-                      </td>
-                      <td className="numeric">
                         {row.target === null ? "—" : money(row.target)}
-                        {row.target !== null && <div className="muted small">{row.target_months} months</div>}
+                        {row.target !== null && <div className="muted small">{row.target_months} months of {money(row.month_cost)}, {row.month_cost_derived ? "derived" : "fixed"}</div>}
+                        {row.target === null && <div className="muted small">month of costs {money(row.month_cost)}, {row.month_cost_derived ? "derived" : "fixed"}</div>}
                       </td>
                       <td className={`numeric ${row.room === null ? "" : signClass(row.room)}`}>{row.room === null ? "—" : money(row.room)}</td>
                       <td className={`numeric ${row.room_net === null ? "" : signClass(row.room_net)}`}>{row.room_net === null ? "—" : money(row.room_net)}</td>
                       <td className={`numeric ${row.new_net === null ? "" : signClass(row.new_net)}`}>{row.new_net === null ? "—" : money(row.new_net)}</td>
+                      <td className="numeric">{money(row.reserve ?? "0.00")}</td>
+                      <td className="numeric">{money(row.loan ?? "0.00")}</td>
                       <td className="numeric">
                         {money(row.lowest)}
                         <div className="muted small">{monthLabel(row.lowest_month)}{row.lowest_months === null ? "" : ` · ${row.lowest_months} months`}</div>

@@ -38,11 +38,13 @@ def _profit(context: _Context, lines: dict[str, Any], year: int) -> tuple[int, d
     """(profit, per-category result by name, director remuneration as a positive cost) for a calendar year.
 
     Business's booked counted transactions plus the projected lines of the year's remaining months, without the
-    VAT, corporate tax, dividend and transfer categories or the excluded ones; consulting income net of VAT.
+    VAT, corporate tax, dividend, transfer and liquidation reserve categories or the excluded ones; consulting income net of VAT.
     """
     data = context.entities["business"]
     settings = context.settings
-    left_out = {_role(context, role) for role in ("vat", "corporate_tax", "transfer_business", "dividend_business")}
+    left_out = {
+        _role(context, role) for role in ("vat", "corporate_tax", "transfer_business", "dividend_business", "reserve_tax", "reserve_withholding")
+    }
     left_out |= set(settings["tax_profit_excluded"])
     consulting, salary_role = _role(context, "consulting_income"), _role(context, "salary_business")
     entries = [(t["category_id"], t["cents"]) for t in data.transactions if t["date"].year == year]

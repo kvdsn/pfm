@@ -676,11 +676,16 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
 .plan-form label.plan-check input { width: auto; margin: 0; padding: 0; flex: none; }
 .plan-form label > .muted { color: var(--muted); }
 .money-plan-table th, .money-plan-table td .muted { white-space: normal; }
-.money-plan-table th { width: 11.5%; }
+.money-plan-table th { width: 10%; }
 .money-plan-table th:first-child { width: 8%; }
+@media (max-width: 900px) {
+  .money-plan-table th, .money-plan-table td { padding-inline: 2px; font-size: 12px; white-space: normal; }
+}
 .plan-buffer { display: grid; gap: 8px; }
 .plan-buffer-row { display: flex; align-items: flex-end; gap: 8px; }
 .plan-buffer-row label { flex: 1 1 0; min-width: 0; }
+.plan-reserve-row { flex-wrap: wrap; }
+.plan-reserve-row label { flex: 1 1 120px; }
 .plan-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 12px; }
 .plan-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .plan-actions { display: flex; gap: 8px; }

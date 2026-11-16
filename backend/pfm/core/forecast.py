@@ -101,6 +101,7 @@ class _Context:
     claims: list[dict[str, Any]] = field(default_factory=list)  # open reimbursement claims
     repayments: dict[str, set[int]] = field(default_factory=dict)  # entity -> transactions of linked repayments
     entities: dict[str, _Entity] = field(default_factory=dict)
+    reserves: list[dict[str, Any]] = field(default_factory=list)  # liquidation reserves, filled by _project
 
     @property
     def months(self) -> range:
@@ -845,6 +846,9 @@ def _money_plan(context: _Context, lines: Lines, closings: dict[int, int]) -> li
     override = settings["buffer_month_cost"]
     rate = Decimal(str(settings["dividend_withholding_rate"]))
     dividend_cid = _role(context, "dividend_personal")
+    from .director_loan import loan_movements  # imported here: director_loan builds on this module
+    from .liquidation_reserve import outstanding
+    loan, _ = loan_movements(context, lines)
     rows: list[dict[str, Any]] = []
     previous: Optional[int] = None
     for year in sorted(derived):
@@ -854,10 +858,15 @@ def _money_plan(context: _Context, lines: Lines, closings: dict[int, int]) -> li
         in_force = [entry["months"] for entry in settings["buffer_months"] if entry["year"] <= year]
         target_months = in_force[-1] if in_force else None
         target = room = room_net = new_net = None
+        reserve, payout_rate = outstanding(context, year)
         if target_months is not None:
             target = _round_cents(Decimal(str(target_months)) * cost)
             room = closing - target
-            room_net = _round_cents(Decimal(room) * (100 - rate) / 100)
+            # The part of the room up to the reserve is paid out at the reserve's (weighted) rate, the rest as dividend.
+            covered = min(max(room, 0), reserve)
+            room_net = _round_cents(
+                (Decimal(covered) * (100 - payout_rate) + Decimal(room - covered) * (100 - rate)) / 100
+            )
             new_net = None if previous is None else room_net - previous
         previous = room_net
         lowest_month = min(year_months, key=lambda month: (closings[month], month))
@@ -871,6 +880,8 @@ def _money_plan(context: _Context, lines: Lines, closings: dict[int, int]) -> li
             "month_cost_derived": not override, "target_months": target_months,
             "target": None if target is None else format_money(target),
             "room": None if room is None else format_money(room),
+            "reserve": format_money(reserve),
+            "loan": format_money(sum(m["cents"] for m in loan if m["date"].year <= year)),
             "room_net": None if room_net is None else format_money(room_net),
             "new_net": None if new_net is None else format_money(new_net),
             "lowest": format_money(lowest), "lowest_month": _month_key(lowest_month),
@@ -950,6 +961,8 @@ def _project(context: _Context) -> tuple[Lines, dict[str, list[str]], dict[str, 
             )
     from .corporate_tax import project_later_years  # imported here: corporate_tax builds on this module
     project_later_years(context, lines, assumptions["business"])
+    from .liquidation_reserve import project_reserves  # imported here: it builds on this module
+    project_reserves(context, lines, assumptions["business"])
     return lines, assumptions, indexes
 
 

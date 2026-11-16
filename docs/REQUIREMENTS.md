@@ -99,7 +99,12 @@ The Forecast page also estimates these:
   - **A month of costs:** the year's average monthly Business outflow from recurring payments, salary, Entity transfers and baselines, without VAT, corporate tax, dividends and planned items. A current year with fewer than 3 projected months uses next year's. A fixed amount can replace it.
   - **Per year:** the year-end balance, the target, the room above it, the room net of withholding, the net room added that year, the lowest month-end and the dividends paid.
   - The Business buffer for Entity transfers stays a separate floor.
-- **Director loan:** Entity transfers from the loan start count as a loan to the director. It carries simple daily interest (3.5% by default), never on a negative balance.
+- **Director loan:** Entity transfers from the loan start count as a loan to the director. It carries simple daily interest (3.5% by default), never on a negative balance. Liquidation reserve payouts pay it down, and it may go below zero.
+- **Liquidation reserve** (Business, settings to confirm with your accountant):
+  - **Existing reserves:** each with its gross amount, the date it can be paid out at the low rate, and that rate.
+  - **New reserves:** a share of each year's profit after corporate tax (0% by default). Business pays 10% of the reserve on 20 December, and the reserve can be paid out at 6.5% from 1 January, 3 years after the year it was formed.
+  - **Payout:** Business pays the withholding, and the net pays down the director loan; no money moves between accounts.
+  - **Money plan:** shows the reserve not yet paid out and the director loan at each year end. In Room, net, the part of the room up to the reserve counts at the reserve's rate, the rest at the dividend withholding.
 
 ### Forecast vs reality
 

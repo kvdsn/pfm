@@ -2,8 +2,8 @@
 with simple interest that Personal pays Business. Money is integer cents; interest is actual/365 on the daily
 balance, never on a negative one, and not added to the balance.
 
-The liquidation reserve payouts that later pay off the loan are entries in the company's books, not bank
-transfers, so they are not part of this.
+The liquidation reserve payouts (net of their withholding) are entries in the company's books that pay the loan
+down, not bank transfers: they are movements marked `reserve`, and the balance may go below zero.
 """
 
 from datetime import date, timedelta
@@ -58,6 +58,34 @@ def _accrued(movements: list[tuple[date, int]], rate: Decimal, start: date, end:
     return interest
 
 
+def loan_movements(context: _Context, lines: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    """The loan's movements from the loan start, oldest first, and notes: booked and projected Entity transfers to
+    Personal, and the projected net reserve payouts (negative, `reserve` true). Run after the balance walk."""
+    from .liquidation_reserve import payouts  # imported here: it builds on forecast
+
+    start = date.fromisoformat(context.settings["loan_start"])
+    transfer_cid = _role(context, "transfer_personal")
+    notes = []
+    movements: list[dict[str, Any]] = []
+    if transfer_cid is None:
+        notes.append("Choose the Personal Entity transfer category in the settings to follow the loan.")
+    else:
+        movements += [
+            {"date": t["date"], "cents": t["cents"], "projected": False, "reserve": False}
+            for t in context.entities["personal"].transactions if t["category_id"] == transfer_cid and t["date"] >= start
+        ]
+        movements += [
+            {"date": day, "cents": cents, "projected": True, "reserve": False}
+            for day, cents in _projected(context, lines, "personal", transfer_cid) if day >= start
+        ]
+    movements += [
+        {"date": p["date"], "cents": -p["net"], "projected": True, "reserve": True}
+        for p in payouts(context) if p["date"] >= start
+    ]
+    movements.sort(key=lambda m: (m["date"], m["projected"]))
+    return movements, notes
+
+
 def director_loan(database_path: Path, today: Optional[date] = None) -> dict[str, Any]:
     """The loan's movements with their running balance, and per year: the transfers, the year-end balance, the
     interest accrued and the interest paid, planned and still unpaid."""
@@ -68,21 +96,8 @@ def director_loan(database_path: Path, today: Optional[date] = None) -> dict[str
     start = date.fromisoformat(settings["loan_start"])
     rate = Decimal(str(settings["loan_interest_rate"]))
     horizon_end = _month_end(context.last)
-    transfer_cid, interest_cid = _role(context, "transfer_personal"), _role(context, "loan_interest_business")
-    notes = []
-    movements: list[dict[str, Any]] = []
-    if transfer_cid is None:
-        notes.append("Choose the Personal Entity transfer category in the settings to follow the loan.")
-    else:
-        movements += [
-            {"date": t["date"], "cents": t["cents"], "projected": False}
-            for t in context.entities["personal"].transactions if t["category_id"] == transfer_cid and t["date"] >= start
-        ]
-        movements += [
-            {"date": day, "cents": cents, "projected": True}
-            for day, cents in _projected(context, lines, "personal", transfer_cid) if day >= start
-        ]
-    movements.sort(key=lambda m: (m["date"], m["projected"]))
+    interest_cid = _role(context, "loan_interest_business")
+    movements, notes = loan_movements(context, lines)
     payments: list[dict[str, Any]] = []
     if interest_cid is None or _role(context, "loan_interest_personal") is None:
         notes.append("Choose the Director loan interest categories (Personal and Business) in the settings to plan interest.")
@@ -103,15 +118,16 @@ def director_loan(database_path: Path, today: Optional[date] = None) -> dict[str
     for year in range(start.year, context.last // 12 + 1):
         of_year = [m for m in movements if m["date"].year == year]
         booked = sum(m["cents"] for m in of_year if not m["projected"])
-        projected = sum(m["cents"] for m in of_year if m["projected"])
+        projected = sum(m["cents"] for m in of_year if m["projected"] and not m["reserve"])
+        repaid = -sum(m["cents"] for m in of_year if m["reserve"])
         interest = _round_cents(accrued.get(year, Decimal(0)))
         paid = sum(p["cents"] for p in payments if p["date"].year == year and not p["projected"])
         planned = sum(p["cents"] for p in payments if p["date"].year == year and p["projected"])
-        opening, balance = balance, balance + booked + projected
+        opening, balance = balance, balance + booked + projected - repaid
         unpaid += interest - paid - planned
         years.append({
             "year": str(year), "opening": format_money(opening), "transfers": format_money(booked),
-            "transfers_projected": format_money(projected), "closing": format_money(balance),
+            "transfers_projected": format_money(projected), "repaid": format_money(repaid), "closing": format_money(balance),
             "interest": format_money(interest), "interest_paid": format_money(paid),
             "interest_planned": format_money(planned), "interest_unpaid": format_money(unpaid),
         })
@@ -121,7 +137,7 @@ def director_loan(database_path: Path, today: Optional[date] = None) -> dict[str
         running += movement["cents"]
         listed.append({
             "date": movement["date"].isoformat(), "amount": format_money(movement["cents"]),
-            "projected": movement["projected"], "balance": format_money(running),
+            "projected": movement["projected"], "reserve": movement["reserve"], "balance": format_money(running),
         })
     return {
         "start": start.isoformat(), "rate": settings["loan_interest_rate"],

@@ -362,6 +362,9 @@ export type MoneyPlanRow = {
   room: string | null;
   room_net: string | null;
   new_net: string | null;
+  /** Gross liquidation reserves formed and not paid out at year end; the director loan's balance at year end. */
+  reserve?: string;
+  loan?: string;
   lowest: string;
   lowest_month: string;
   lowest_months: number | null;
@@ -389,7 +392,10 @@ export type Forecast = {
 /** The model roles whose categories the settings name; see ROLES in the backend. */
 export type ForecastRole =
   | "consulting_income" | "vat" | "corporate_tax" | "salary_business" | "salary_personal"
-  | "transfer_business" | "transfer_personal" | "loan_interest_business" | "loan_interest_personal";
+  | "transfer_business" | "transfer_personal" | "loan_interest_business" | "loan_interest_personal"
+  | "reserve_tax" | "reserve_withholding";
+/** A liquidation reserve already formed: the gross amount, the date it can be paid out at the low rate, and the withholding in percent. */
+export type LiquidationReserve = { label: string; amount: string; payable: string; rate: number };
 export type ForecastSettings = {
   personal_min_balance: string;
   business_buffer: string;
@@ -424,6 +430,12 @@ export type ForecastSettings = {
   buffer_month_cost: string;
   /** The share of a dividend that is withheld, in percent. */
   dividend_withholding_rate: number;
+  /** Liquidation reserve: the ones already formed, the share of each year's profit after tax put into a new one, the tax on forming it, the years to wait and the payout withholding, in percent. */
+  liquidation_reserves?: LiquidationReserve[];
+  reserve_share?: number;
+  reserve_tax_rate?: number;
+  reserve_wait_years?: number;
+  reserve_payout_rate?: number;
   roles: Record<ForecastRole, number | null>;
   closed_categories: Record<AccountType, number[]>;
   yearly_categories: Record<AccountType, number[]>;
@@ -533,6 +545,8 @@ export type DirectorLoanYear = {
   opening: string;
   transfers: string;
   transfers_projected: string;
+  /** Net reserve payouts of the year that paid the loan down. */
+  repaid?: string;
   closing: string;
   interest: string;
   interest_paid: string;
@@ -540,7 +554,7 @@ export type DirectorLoanYear = {
   /** Cumulative: accrued minus paid minus planned, through the end of this year. */
   interest_unpaid: string;
 };
-export type DirectorLoanMovement = { date: string; amount: string; projected: boolean; balance: string };
+export type DirectorLoanMovement = { date: string; amount: string; projected: boolean; reserve?: boolean; balance: string };
 export type DirectorLoanPayment = { date: string; amount: string; projected: boolean };
 export type DirectorLoan = {
   start: string;

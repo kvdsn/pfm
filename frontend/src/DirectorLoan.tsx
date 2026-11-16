@@ -70,6 +70,7 @@ export function DirectorLoanSection({
                 <tr>
                   <th>Year</th>
                   <th className="numeric">Transfers</th>
+                  <th className="numeric">Repaid</th>
                   <th className="numeric">Year end</th>
                   <th className="numeric">Interest</th>
                   <th className="numeric">Paid / planned</th>
@@ -88,6 +89,7 @@ export function DirectorLoanSection({
                         <span className="nowrap">{money(year.transfers)}</span>
                         {projected !== 0 && <span className="projected nowrap">+ {money(year.transfers_projected)} projected</span>}
                       </td>
+                      <td className="numeric nowrap">{money(year.repaid ?? "0.00")}</td>
                       <td className="numeric nowrap">{money(year.closing)}</td>
                       <td className="numeric nowrap">{money(year.interest)}</td>
                       <td className="numeric nowrap">{money(paid)}</td>
@@ -98,7 +100,7 @@ export function DirectorLoanSection({
                     </tr>,
                     planningYear === year.year && (
                       <tr key={`${year.year}-form`} className="loan-form-row">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <form className="recurring-form loan-form" aria-label={`Plan interest for ${year.year}`} onSubmit={(event) => { event.preventDefault(); void save(); }}>
                             <label>Date
                               <input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
@@ -135,7 +137,7 @@ export function DirectorLoanSection({
                     <tbody>
                       {loan.movements.map((move) => (
                         <tr key={`${move.date}\u0000${move.amount}\u0000${move.projected}`} className={move.projected ? "projected" : undefined}>
-                          <td className="nowrap">{move.date}{move.projected ? " (projected)" : ""}</td>
+                          <td className="nowrap">{move.date}{move.projected ? " (projected)" : ""}{move.reserve ? " · reserve payout" : ""}</td>
                           <td className="numeric nowrap">{money(move.amount)}</td>
                           <td className="numeric nowrap">{money(move.balance)}</td>
                         </tr>
@@ -148,7 +150,7 @@ export function DirectorLoanSection({
           )}
         </>
       )}
-      <p className="muted small">Entity transfers from Business since the start date count as the loan. Interest is simple, per day, on the balance. Reserve payouts that pay off the loan are entries in the company's books, not bank transfers, so they don't appear here.</p>
+      <p className="muted small">Entity transfers from Business since the start date count as the loan. Interest is simple, per day, on the balance. Liquidation reserve payouts (net of the withholding) are entries in the company's books, not bank transfers: they pay the loan down, and the balance can go below zero.</p>
       <h5 className="plan-subheading">Loan rules</h5>
       {rules}
     </section>

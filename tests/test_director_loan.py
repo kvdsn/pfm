@@ -53,7 +53,7 @@ class BalanceTests(LoanFixture):
         self.add(BUSINESS, "business", "Start2", [(date(2026, 10, 13), 500.0, 10000.0)])
         row = self.year("2026")
         self.assertEqual((row["transfers"], row["transfers_projected"], row["closing"]), ("0.00", "1500.00", "1500.00"))
-        self.assertEqual(self.loan()["movements"][0], {"date": "2026-10-31", "amount": "1500.00", "projected": True, "balance": "1500.00"})
+        self.assertEqual(self.loan()["movements"][0], {"date": "2026-10-31", "amount": "1500.00", "projected": True, "reserve": False, "balance": "1500.00"})
 
 
 class InterestTests(LoanFixture):

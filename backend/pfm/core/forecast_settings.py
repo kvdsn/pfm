@@ -46,6 +46,13 @@ DEFAULTS: dict[str, Any] = {
     "buffer_month_cost": 0,
     # The share of a dividend that is withheld, in percent.
     "dividend_withholding_rate": 25,
+    # The liquidation reserves already formed: [{"label", "amount" (cents), "payable" (date), "rate" (percent)}].
+    "liquidation_reserves": [],
+    # The share of each year's profit after corporate tax put into a new reserve, in percent; 0 forms none.
+    "reserve_share": 0,
+    "reserve_tax_rate": 10,
+    "reserve_wait_years": 3,
+    "reserve_payout_rate": 6.5,
 }
 MAX_BUFFER_MONTHS = 120
 MONEY_SETTINGS = (
@@ -57,6 +64,9 @@ PERCENT_SETTINGS = {
     "tax_base_rate": ("Base rate", 0, 20),
     "loan_interest_rate": ("Loan interest rate", 0, 20),
     "dividend_withholding_rate": ("Dividend withholding rate", 0, 99),
+    "reserve_share": ("Reserve share", 0, 100),
+    "reserve_tax_rate": ("Reserve tax rate", 0, 100),
+    "reserve_payout_rate": ("Reserve payout rate", 0, 100),
 }
 WHOLE_RANGES = {
     "payment_delay_months": (0, 6),
@@ -64,6 +74,7 @@ WHOLE_RANGES = {
     "vat_day": (1, 28),
     "baseline_months": (3, 12),
     "reimbursement_delay_days": (0, 180),
+    "reserve_wait_years": (0, 10),
 }
 # Each model's role: the entity it books in and the default category name there.
 ROLES = {
@@ -78,6 +89,8 @@ ROLES = {
     "loan_interest_personal": ("personal", "Director loan interest"),
     "dividend_business": ("business", "Dividends"),
     "dividend_personal": ("personal", "Dividends"),
+    "reserve_tax": ("business", "Liquidation reserve tax"),
+    "reserve_withholding": ("business", "Liquidation reserve withholding"),
 }
 DEFAULT_CLOSED: dict[str, list[str]] = {"personal": [], "business": [], "kids": []}
 
@@ -142,6 +155,7 @@ def load_settings(db: sqlite3.Connection) -> dict[str, Any]:
     settings = {key: stored.get(key, default) for key, default in DEFAULTS.items()}
     settings["tax_profit_excluded"] = list(settings["tax_profit_excluded"])
     settings["buffer_months"] = [dict(entry) for entry in settings["buffer_months"]]
+    settings["liquidation_reserves"] = [dict(entry) for entry in settings["liquidation_reserves"]]
     saved_roles = stored.get("roles", {})
     settings["roles"] = {
         role: saved_roles[role] if role in saved_roles else _category_id_by_name(db, entity, name)
@@ -163,7 +177,8 @@ def get_settings(database_path: Path) -> dict[str, Any]:
     """The settings for the API: amounts formatted, roles as {role: category_id | null}."""
     with connect(database_path) as db:
         settings = load_settings(db)
-    return {**settings, **{key: format_money(settings[key]) for key in MONEY_SETTINGS}}
+    reserves = [{**entry, "amount": format_money(entry["amount"])} for entry in settings["liquidation_reserves"]]
+    return {**settings, **{key: format_money(settings[key]) for key in MONEY_SETTINGS}, "liquidation_reserves": reserves}
 
 
 def _end_year(value: Any) -> int:
@@ -186,6 +201,20 @@ def _buffer_months(value: Any) -> list[dict[str, Any]]:
             raise ValueError(f"Buffer year {year} is listed twice")
         found[year] = _number(entry.get("months"), "Buffer months", 0, MAX_BUFFER_MONTHS)
     return [{"year": year, "months": found[year]} for year in sorted(found)]
+
+
+def _reserves(value: Any) -> list[dict[str, Any]]:
+    """The reserves already formed, as stored: amount in cents, payable as an ISO date, rate in percent."""
+    if not isinstance(value, list) or any(not isinstance(entry, dict) for entry in value):
+        raise ValueError("Liquidation reserves must be a list of reserves")
+    found = []
+    for entry in value:
+        label = str(entry.get("label") or "").strip()
+        cents = _nonnegative_cents(entry.get("amount"), "Reserve amount")
+        payable = _parse_date(entry.get("payable"), "Reserve payable date").isoformat()
+        rate = _number(entry.get("rate"), "Reserve withholding rate", 0, 100)
+        found.append({"label": label, "amount": cents, "payable": payable, "rate": rate})
+    return sorted(found, key=lambda entry: (entry["payable"], entry["label"]))
 
 
 def _check_category(db: sqlite3.Connection, account_type: str, category_id: Any, label: str) -> int:
@@ -222,6 +251,8 @@ def _validated_changes(db: sqlite3.Connection, changes: dict[str, Any], current:
             valid[key] = _end_year(value)
         elif key == "buffer_months":
             valid[key] = _buffer_months(value)
+        elif key == "liquidation_reserves":
+            valid[key] = _reserves(value)
         elif key == "loan_start":
             valid[key] = _parse_date(value, "Loan start").isoformat()
         elif key == "salary_net_percent":

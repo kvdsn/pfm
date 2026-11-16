@@ -178,6 +178,11 @@ class ForecastSettingsUpdate(BaseModel):
     buffer_months: Optional[list[dict[str, Any]]] = None
     buffer_month_cost: Union[str, int, float, None] = None
     dividend_withholding_rate: Optional[float] = None
+    liquidation_reserves: Optional[list[dict[str, Any]]] = None
+    reserve_share: Optional[float] = None
+    reserve_tax_rate: Optional[float] = None
+    reserve_wait_years: Optional[int] = None
+    reserve_payout_rate: Optional[float] = None
     closed_categories: Optional[dict[AccountType, list[int]]] = None
     yearly_categories: Optional[dict[AccountType, list[int]]] = None
     roles: Optional[dict[str, Optional[int]]] = None  # a null category clears the role

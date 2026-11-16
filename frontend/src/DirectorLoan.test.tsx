@@ -54,6 +54,18 @@ describe("DirectorLoanSection", () => {
     expect(within(screen.getByRole("table", { name: "Loan movements" })).getAllByRole("row")).toHaveLength(3);
   });
 
+  it("shows the repaid figure and marks reserve payouts in the movements", () => {
+    const data: DirectorLoan = {
+      ...loan,
+      years: [{ ...loan.years[0], repaid: "9500.00", closing: "-1500.00" }],
+      movements: [...loan.movements, { date: "2026-12-20", amount: "-9500.00", projected: true, reserve: true, balance: "-1500.00" }],
+    };
+    renderSection(data);
+    expect(within(screen.getByRole("table", { name: "Loan per year" })).getAllByRole("row")[1]).toHaveTextContent("€ 9.500,00");
+    fireEvent.click(screen.getByRole("button", { name: "Show the movements" }));
+    expect(screen.getByText(/· reserve payout/)).toBeInTheDocument();
+  });
+
   it("plans the interest with the unpaid amount as default", async () => {
     const next = { ...loan, notes: [] };
     apiMock.mockResolvedValue(next);

@@ -24,9 +24,12 @@ const settings: ForecastSettings = {
   tax_reduced_threshold: "51000.00", tax_reduced_rate: 20, tax_reduced_band: "100000.00", tax_standard_rate: 25,
   tax_base_rate: 3, tax_surcharge_applies: true, tax_profit_excluded: [], loan_start: "2026-01-01", loan_interest_rate: 3.5,
   forecast_end_year: 0, buffer_months: [{ year: 2026, months: 3 }], buffer_month_cost: "0.00", dividend_withholding_rate: 25,
+  liquidation_reserves: [{ label: "Old", amount: "10000.00", payable: "2027-01-01", rate: 5 }], reserve_share: 0,
+  reserve_tax_rate: 10, reserve_wait_years: 3, reserve_payout_rate: 6.5,
   roles: {
     consulting_income: 41, vat: 43, corporate_tax: 42, salary_business: null, salary_personal: null,
     transfer_business: null, transfer_personal: null, loan_interest_business: null, loan_interest_personal: null,
+    reserve_tax: null, reserve_withholding: null,
   },
   closed_categories: { personal: [], business: [44], kids: [] },
   yearly_categories: { personal: [], business: [], kids: [] },
@@ -45,7 +48,7 @@ const forecast = {
   money_plan: [
     {
       year: "2026", closing: "30000.00", month_cost: "4000.00", month_cost_derived: true, target_months: 3, target: "12000.00",
-      room: "18000.00", room_net: "13500.00", new_net: null, lowest: "9000.00", lowest_month: "2026-03", lowest_months: 2.3,
+      room: "18000.00", room_net: "13500.00", new_net: null, reserve: "10000.00", loan: "-1500.00", lowest: "9000.00", lowest_month: "2026-03", lowest_months: 2.3,
       dividends_net: "1500.00",
     },
     {
@@ -486,14 +489,15 @@ describe("PlanView money plan", () => {
     expect(rows).toHaveLength(4);
     const first = within(rows[1]).getAllByRole("cell");
     expect(first[0]).toHaveTextContent("2026");
-    expect(first[2]).toHaveTextContent("derived");
-    expect(first[3]).toHaveTextContent("3 months");
-    expect(first[4]).toHaveClass("positive");
+    expect(first[2]).toHaveTextContent("3 months of € 4.000,00, derived");
+    expect(first[3]).toHaveClass("positive");
     const second = within(rows[2]).getAllByRole("cell");
-    expect(second[2]).not.toHaveTextContent("derived");
-    expect(second[4]).toHaveClass("negative");
-    expect(second[7]).toHaveTextContent("2 months");
-    expect(within(rows[3]).getAllByRole("cell")[3]).toHaveTextContent("—");
+    expect(second[2]).toHaveTextContent("fixed");
+    expect(second[3]).toHaveClass("negative");
+    expect(second[8]).toHaveTextContent("2 months");
+    expect(first[6]).toHaveTextContent("10.000,00");
+    expect(first[7]).toHaveTextContent("1.500,00");
+    expect(within(rows[3]).getAllByRole("cell")[2]).toHaveTextContent("—");
   });
 
   it("is not shown for Personal", async () => {
@@ -516,6 +520,27 @@ describe("PlanView money plan", () => {
     await waitFor(() => expect(calls("PUT")).toHaveLength(1));
     expect(calls("PUT")[0][1].json).toEqual({
       buffer_months: [{ year: 2026, months: 4 }, { year: 2028, months: 5 }], buffer_month_cost: "3500", dividend_withholding_rate: 30,
+    });
+  });
+
+  it("edits the reserves and sends them with the reserve settings", async () => {
+    await renderView();
+    const money = section("Money plan");
+    expect(money.getByLabelText("Label")).toHaveValue("Old");
+    fireEvent.change(money.getByLabelText("Amount"), { target: { value: "12000" } });
+    fireEvent.click(money.getByRole("button", { name: "Add reserve" }));
+    fireEvent.change(money.getAllByLabelText("Label")[1], { target: { value: "New" } });
+    fireEvent.change(money.getAllByLabelText("Amount")[1], { target: { value: "500" } });
+    fireEvent.change(money.getAllByLabelText("Payable from")[1], { target: { value: "2030-01-01" } });
+    fireEvent.change(money.getByLabelText(/New reserve \(%/), { target: { value: "50" } });
+    fireEvent.click(money.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls("PUT")).toHaveLength(1));
+    expect(calls("PUT")[0][1].json).toEqual({
+      liquidation_reserves: [
+        { label: "Old", amount: "12000", payable: "2027-01-01", rate: 5 },
+        { label: "New", amount: "500", payable: "2030-01-01", rate: 6.5 },
+      ],
+      reserve_share: 50,
     });
   });
 
