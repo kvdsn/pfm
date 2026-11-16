@@ -23,6 +23,7 @@ const settings: ForecastSettings = {
   vat_day: 15, baseline_months: 6, baseline_weighted: false, one_off_factor: 3, salary_net_percent: 0, reimbursement_delay_days: 30,
   tax_reduced_threshold: "51000.00", tax_reduced_rate: 20, tax_reduced_band: "100000.00", tax_standard_rate: 25,
   tax_base_rate: 3, tax_surcharge_applies: true, tax_profit_excluded: [], loan_start: "2026-01-01", loan_interest_rate: 3.5,
+  forecast_end_year: 0, buffer_months: [{ year: 2026, months: 3 }], buffer_month_cost: "0.00", dividend_withholding_rate: 25,
   roles: {
     consulting_income: 41, vat: 43, corporate_tax: 42, salary_business: null, salary_personal: null,
     transfer_business: null, transfer_personal: null, loan_interest_business: null, loan_interest_personal: null,
@@ -40,6 +41,22 @@ const forecast = {
   year_ends: [{ year: "2026", closing: "30000.00", low: "29500.00", high: "31800.00" }],
   one_offs: [{ transaction_id: 7, date: "2026-03-02", merchant: "Tax office", category: "Corporate tax", amount: "-8000.00" }],
   assumptions: ["Personal receives 62.5% of the salary, as over the last 12 months."],
+  money_plan: [
+    {
+      year: "2026", closing: "30000.00", month_cost: "4000.00", month_cost_derived: true, target_months: 3, target: "12000.00",
+      room: "18000.00", room_net: "13500.00", new_net: null, lowest: "9000.00", lowest_month: "2026-03", lowest_months: 2.3,
+      dividends_net: "1500.00",
+    },
+    {
+      year: "2027", closing: "11000.00", month_cost: "4000.00", month_cost_derived: false, target_months: 4, target: "16000.00",
+      room: "-5000.00", room_net: "-3750.00", new_net: "-17250.00", lowest: "8000.00", lowest_month: "2027-06", lowest_months: 2,
+      dividends_net: "0.00",
+    },
+    {
+      year: "2028", closing: "20000.00", month_cost: "4000.00", month_cost_derived: true, target_months: null, target: null,
+      room: null, room_net: null, new_net: null, lowest: "7000.00", lowest_month: "2028-01", lowest_months: null, dividends_net: "0.00",
+    },
+  ],
   backtest: {
     origins: 9, horizons: [{ months: 1, p10: "-120.00", p90: "200.00", mae: "90.00" }],
     baseline: { baseline_months: 6, baseline_weighted: false }, recommended: { baseline_months: 12, baseline_weighted: true },
@@ -452,5 +469,93 @@ describe("PlanView corporate tax", () => {
     fireEvent.click(loan.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls("PUT")).toHaveLength(1));
     expect(calls("PUT")[0][1].json).toEqual({ loan_interest_rate: 4 });
+  });
+});
+
+describe("PlanView money plan", () => {
+  it("shows a row per year with room in the negative style and dashes without a target", async () => {
+    await renderView();
+    const rows = within(screen.getByRole("table", { name: "Money plan" })).getAllByRole("row");
+    expect(rows).toHaveLength(4);
+    const first = within(rows[1]).getAllByRole("cell");
+    expect(first[0]).toHaveTextContent("2026");
+    expect(first[2]).toHaveTextContent("derived");
+    expect(first[3]).toHaveTextContent("3 months");
+    expect(first[4]).toHaveClass("positive");
+    const second = within(rows[2]).getAllByRole("cell");
+    expect(second[2]).not.toHaveTextContent("derived");
+    expect(second[4]).toHaveClass("negative");
+    expect(second[7]).toHaveTextContent("2 months");
+    expect(within(rows[3]).getAllByRole("cell")[3]).toHaveTextContent("—");
+  });
+
+  it("is not shown for Personal", async () => {
+    await renderView("personal");
+    expect(screen.queryByRole("region", { name: "Money plan" })).toBeNull();
+  });
+
+  it("saves the buffer targets, the fixed month cost and the withholding rate together", async () => {
+    await renderView();
+    const money = section("Money plan");
+    fireEvent.change(money.getByLabelText("Months of costs"), { target: { value: "4" } });
+    fireEvent.click(money.getByRole("button", { name: "Add year" }));
+    const years = money.getAllByLabelText("From year");
+    fireEvent.change(years[1], { target: { value: "2028" } });
+    fireEvent.change(money.getAllByLabelText("Months of costs")[1], { target: { value: "5" } });
+    fireEvent.change(money.getByLabelText(/Fixed month of costs/), { target: { value: "" } });
+    fireEvent.change(money.getByLabelText(/Fixed month of costs/), { target: { value: "3500" } });
+    fireEvent.change(money.getByLabelText("Dividend withholding (%)"), { target: { value: "30" } });
+    fireEvent.click(money.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls("PUT")).toHaveLength(1));
+    expect(calls("PUT")[0][1].json).toEqual({
+      buffer_months: [{ year: 2026, months: 4 }, { year: 2028, months: 5 }], buffer_month_cost: "3500", dividend_withholding_rate: 30,
+    });
+  });
+
+  it("sends the forecast end year from the baseline settings", async () => {
+    await renderView();
+    const year = new Date().getFullYear() + 3;
+    fireEvent.change(section("Baselines").getByLabelText("Forecast to"), { target: { value: String(year) } });
+    fireEvent.click(section("Baselines").getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls("PUT")).toHaveLength(1));
+    expect(calls("PUT")[0][1].json).toEqual({ forecast_end_year: year });
+  });
+});
+
+describe("PlanView dividend purchases", () => {
+  it("offers Paid by dividend for Personal only and sends it", async () => {
+    const props = { onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), onClose: vi.fn() };
+    render(<PlanView accountType="personal" categories={categories} forecast={forecast} {...props} />);
+    await screen.findByRole("region", { name: "Baselines" });
+    fireEvent.click(screen.getByRole("button", { name: "Add planned item" }));
+    const form = within(screen.getByRole("form", { name: "Add planned item" }));
+    fireEvent.change(form.getByLabelText("Date"), { target: { value: "2027-05-01" } });
+    fireEvent.change(form.getByLabelText("Amount"), { target: { value: "-1500" } });
+    fireEvent.click(form.getByLabelText("Paid by dividend"));
+    fireEvent.click(form.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls("POST")).toHaveLength(1));
+    expect(calls("POST")[0][1].json).toMatchObject({ account_type: "personal", amount: "-1500", paid_by_dividend: true });
+  });
+
+  it("does not offer it for Business", async () => {
+    await renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Add planned item" }));
+    expect(screen.queryByLabelText("Paid by dividend")).toBeNull();
+  });
+
+  it("tags dividend lines, hides their link and asks before deleting", async () => {
+    plannedItems = [planned(5, { dividend_group: 4, paid_by_dividend: true, note: "Camera" })];
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await renderView();
+    expect(screen.getByText("dividend")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit planned item 2026-12-01" }));
+    expect(screen.queryByLabelText("Linked to")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete planned item 2026-12-01" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("three lines"));
+    expect(calls("DELETE")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Delete planned item 2026-12-01" }));
+    await waitFor(() => expect(calls("DELETE")).toHaveLength(1));
+    confirm.mockRestore();
   });
 });

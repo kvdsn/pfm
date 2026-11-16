@@ -15,6 +15,7 @@ import {
   type ForecastVsActual,
   type ForecastRole,
   type ForecastSettings,
+  type MoneyPlanRow,
   type PlannedItem,
   type SalarySchedule,
 } from "./types";
@@ -56,7 +57,11 @@ const monthLabel = (key: string) =>
 // --- Settings sections ----------------------------------------------------------------
 
 type Field =
-  | { kind: "text" | "number"; key: keyof ForecastSettings; label: string; help?: string }
+  | { kind: "text" | "number"; key: keyof ForecastSettings; label: string; help?: string; /** Sent when the field is left empty. */ blank?: string }
+  /** A choice sent as a number: [value, label]. */
+  | { kind: "select"; key: keyof ForecastSettings; label: string; options: [number, string][] }
+  /** Business's buffer target: rows of a year and months of costs. */
+  | { kind: "buffer"; label: string }
   | { kind: "checkbox"; key: keyof ForecastSettings; label: string }
   /** This entity's closed categories: left out of the baseline. */
   | { kind: "closed"; label: string }
@@ -66,7 +71,10 @@ type Field =
   | { kind: "roles"; roles: ForecastRole[] };
 
 type Draft = Record<string, unknown>;
-const fieldId = (field: Field) => (field.kind === "closed" || field.kind === "excluded" || field.kind === "roles" ? field.kind : String(field.key));
+type BufferRow = { year: string; months: string };
+const fieldId = (field: Field) => (
+  field.kind === "closed" || field.kind === "excluded" || field.kind === "roles" || field.kind === "buffer" ? field.kind : String(field.key)
+);
 
 function initialDraft(fields: Field[], settings: ForecastSettings, accountType: AccountType): Draft {
   const draft: Draft = {};
@@ -74,6 +82,7 @@ function initialDraft(fields: Field[], settings: ForecastSettings, accountType: 
     if (field.kind === "closed") draft.closed = [...settings.closed_categories[accountType]].sort((a, b) => a - b);
     else if (field.kind === "excluded") draft.excluded = [...settings.tax_profit_excluded].sort((a, b) => a - b);
     else if (field.kind === "roles") draft.roles = Object.fromEntries(field.roles.map((role) => [role, settings.roles[role]]));
+    else if (field.kind === "buffer") draft.buffer = settings.buffer_months.map((row): BufferRow => ({ year: String(row.year), months: String(row.months) }));
     else if (field.kind === "checkbox") draft[String(field.key)] = Boolean(settings[field.key]);
     else draft[String(field.key)] = String(settings[field.key]);
   }
@@ -92,11 +101,18 @@ function changesOf(fields: Field[], draft: Draft, initial: Draft, accountType: A
       const before = initial.roles as Record<string, number | null>;
       const after = draft.roles as Record<string, number | null>;
       changes.roles = Object.fromEntries(Object.keys(after).filter((role) => after[role] !== before[role]).map((role) => [role, after[role]]));
+    } else if (field.kind === "buffer") {
+      const asNumber = (text: string) => (text !== "" && !Number.isNaN(Number(text)) ? Number(text) : text);
+      changes.buffer_months = (draft.buffer as BufferRow[])
+        .filter((row) => row.year.trim() !== "" || row.months.trim() !== "")
+        .map((row) => ({ year: asNumber(row.year.trim()), months: asNumber(row.months.trim()) }));
+    } else if (field.kind === "select") {
+      changes[String(field.key)] = Number(draft[id]);
     } else if (field.kind === "number") {
       const text = String(draft[id]).trim();
       // A number the server can read is sent as one; anything else goes as typed, for the server to explain.
       changes[String(field.key)] = text !== "" && !Number.isNaN(Number(text)) ? Number(text) : text;
-    } else if (field.kind === "text") changes[String(field.key)] = String(draft[id]).trim();
+    } else if (field.kind === "text") changes[String(field.key)] = String(draft[id]).trim() || (field.blank ?? "");
     else changes[String(field.key)] = draft[id];
   }
   return changes;
@@ -181,6 +197,41 @@ function SettingsForm({
             </div>
           );
         }
+        if (field.kind === "select") {
+          return (
+            <label key={String(field.key)}>{field.label}
+              <select value={String(draft[String(field.key)])} onChange={(event) => set(String(field.key), event.target.value)}>
+                {field.options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+              </select>
+            </label>
+          );
+        }
+        if (field.kind === "buffer") {
+          const rows = draft.buffer as BufferRow[];
+          const update = (index: number, patch: Partial<BufferRow>) =>
+            set("buffer", rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
+          return (
+            <fieldset key="buffer">
+              <legend>{field.label}</legend>
+              <div className="plan-buffer">
+                {rows.map((row, index) => (
+                  <div className="plan-buffer-row" key={index}>
+                    <label>From year
+                      <input type="text" inputMode="numeric" value={row.year} onChange={(event) => update(index, { year: event.target.value })} />
+                    </label>
+                    <label>Months of costs
+                      <input type="text" inputMode="decimal" value={row.months} onChange={(event) => update(index, { months: event.target.value })} />
+                    </label>
+                    <button type="button" className="button secondary" aria-label={`Remove target ${index + 1}`} onClick={() => set("buffer", rows.filter((_, at) => at !== index))}>Remove</button>
+                  </div>
+                ))}
+                <div>
+                  <button type="button" className="button secondary" onClick={() => set("buffer", [...rows, { year: "", months: "" }])}>Add year</button>
+                </div>
+              </div>
+            </fieldset>
+          );
+        }
         return (
           <label key={String(field.key)}>{field.label}
             <input
@@ -230,16 +281,20 @@ function SettingsSection({
 
 // --- Planned items --------------------------------------------------------------------
 
-type PlannedDraft = { date: string; amount: string; categoryId: string; note: string; linkId: string };
-const emptyPlanned: PlannedDraft = { date: "", amount: "", categoryId: "", note: "", linkId: "" };
+type PlannedDraft = { date: string; amount: string; categoryId: string; note: string; linkId: string; dividend: boolean };
+const emptyPlanned: PlannedDraft = { date: "", amount: "", categoryId: "", note: "", linkId: "", dividend: false };
 const plannedDraftOf = (item: PlannedItem): PlannedDraft => ({
   date: item.date, amount: item.amount, categoryId: item.category_id === null ? "" : String(item.category_id),
-  note: item.note, linkId: item.linked ? String(item.linked.id) : "",
+  note: item.note, linkId: item.linked ? String(item.linked.id) : "", dividend: false,
 });
 
 function PlannedForm({
-  label, initial, categories, linkable, busy, error, onSave, onCancel,
+  label, initial, categories, linkable, busy, error, onSave, onCancel, canDividend = false, hideLink = false,
 }: {
+  /** Adding to Personal: offers "Paid by dividend". */
+  canDividend?: boolean;
+  /** The lines of a dividend purchase are linked by the app. */
+  hideLink?: boolean;
   label: string;
   initial: PlannedDraft;
   categories: Category[];
@@ -268,7 +323,13 @@ function PlannedForm({
       <label>Note
         <input type="text" value={draft.note} onChange={(event) => change({ note: event.target.value })} />
       </label>
-      <label>Linked to
+      {canDividend && (
+        <label className="plan-check">
+          <input type="checkbox" checked={draft.dividend} onChange={(event) => change({ dividend: event.target.checked })} />
+          Paid by dividend
+        </label>
+      )}
+      {!hideLink && <label>Linked to
         <select value={draft.linkId} onChange={(event) => change({ linkId: event.target.value })}>
           <option value="">Not linked</option>
           {linkable.map((item) => (
@@ -277,7 +338,7 @@ function PlannedForm({
             </option>
           ))}
         </select>
-      </label>
+      </label>}
       {error && <p className="recurring-error plan-form-error" role="alert">{error}</p>}
       <div className="plan-actions">
         <button type="submit" className="button primary" disabled={busy}>Save</button>
@@ -557,6 +618,7 @@ export function PlanView({
         amount: draft.amount,
         category_id: draft.categoryId === "" ? null : Number(draft.categoryId),
         note: draft.note,
+        ...(!item && draft.dividend ? { paid_by_dividend: true } : {}),
       };
       const saved = item
         ? await api<PlannedItem>(`/api/planned/${item.id}`, { method: "PATCH", json: body })
@@ -567,7 +629,10 @@ export function PlanView({
       onNotice(item ? "Saved the planned item." : "Added the planned item.");
     }, "Could not save the planned item");
   const deletePlanned = (item: PlannedItem) =>
-    run("planned", async () => {
+    item.dividend_group != null
+      && !window.confirm("This purchase is paid by dividend. Deleting it also deletes its dividend lines in Personal and Business, three lines in all. Continue?")
+      ? Promise.resolve()
+      : run("planned", async () => {
       await api(`/api/planned/${item.id}?account_type=${accountType}`, { method: "DELETE" });
       onNotice("Removed the planned item.");
     }, "Could not remove the planned item");
@@ -635,12 +700,23 @@ export function PlanView({
     { kind: "text", key: "business_buffer", label: "Business buffer", help: "Business keeps at least this much when it transfers" },
     { kind: "number", key: "reimbursement_delay_days", label: "Reimbursement delay (days)", help: "How long after a claim arises Business is expected to repay it" },
   ], []);
+  const endYearOptions = useMemo((): [number, string][] => {
+    const thisYear = Number((forecast?.today ?? new Date().toLocaleDateString("sv")).slice(0, 4));
+    const years = Array.from({ length: 9 }, (_, index) => thisYear + 1 + index);
+    return [[0, `Next year (${thisYear + 1})`], ...years.slice(1).map((year): [number, string] => [year, String(year)])];
+  }, [forecast?.today]);
+  const moneyPlanFields: Field[] = useMemo(() => [
+    { kind: "buffer", label: "Buffer target at the end of each year" },
+    { kind: "text", key: "buffer_month_cost", label: "Fixed month of costs", blank: "0", help: "Leave empty or 0 to work it out from the forecast" },
+    { kind: "number", key: "dividend_withholding_rate", label: "Dividend withholding (%)" },
+  ], []);
   const baselineFields: Field[] = useMemo(() => [
+    { kind: "select", key: "forecast_end_year", label: "Forecast to", options: endYearOptions },
     { kind: "number", key: "baseline_months", label: "Months of history" },
     { kind: "checkbox", key: "baseline_weighted", label: "Weighted: recent months count more" },
     { kind: "number", key: "one_off_factor", label: "One-off factor", help: "A transaction this many times the typical month is a one-off and left out" },
     { kind: "closed", label: "Closed categories: left out of the baseline" },
-  ], []);
+  ], [endYearOptions]);
   const taxFields: Field[] = useMemo(() => [
     { kind: "text", key: "tax_reduced_threshold", label: "Director remuneration for the reduced rate", help: "The year's remuneration must reach this" },
     { kind: "number", key: "tax_reduced_rate", label: "Reduced rate (%)" },
@@ -697,6 +773,51 @@ export function PlanView({
         ) : <p className="muted small">The forecast is not available.</p>}
       </section>
 
+      {isBusiness && settings && (
+        <section className="panel plan-panel" aria-label="Money plan">
+          <h4 className="plan-heading">Money plan</h4>
+          <p className="muted small">What Business keeps above its buffer target at the end of each year, and what that is worth as a dividend.</p>
+          {forecast?.money_plan && forecast.money_plan.length > 0 ? (
+            <div className="table-scroll">
+              <table className="rules-table plan-table money-plan-table" aria-label="Money plan">
+                <thead>
+                  <tr>
+                    <th>Year</th><th className="numeric">Year end</th><th className="numeric">Month of costs</th><th className="numeric">Target</th>
+                    <th className="numeric">Room</th><th className="numeric">Room, net</th><th className="numeric">New, net</th>
+                    <th className="numeric">Lowest</th><th className="numeric">Dividends, net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {forecast.money_plan.map((row: MoneyPlanRow) => (
+                    <tr key={row.year}>
+                      <td className="nowrap">{row.year}</td>
+                      <td className="numeric">{money(row.closing)}</td>
+                      <td className="numeric">
+                        {money(row.month_cost)}
+                        <div className="muted small">{row.month_cost_derived ? "derived" : "fixed"}</div>
+                      </td>
+                      <td className="numeric">
+                        {row.target === null ? "—" : money(row.target)}
+                        {row.target !== null && <div className="muted small">{row.target_months} months</div>}
+                      </td>
+                      <td className={`numeric ${row.room === null ? "" : signClass(row.room)}`}>{row.room === null ? "—" : money(row.room)}</td>
+                      <td className={`numeric ${row.room_net === null ? "" : signClass(row.room_net)}`}>{row.room_net === null ? "—" : money(row.room_net)}</td>
+                      <td className={`numeric ${row.new_net === null ? "" : signClass(row.new_net)}`}>{row.new_net === null ? "—" : money(row.new_net)}</td>
+                      <td className="numeric">
+                        {money(row.lowest)}
+                        <div className="muted small">{monthLabel(row.lowest_month)}{row.lowest_months === null ? "" : ` · ${row.lowest_months} months`}</div>
+                      </td>
+                      <td className="numeric">{money(row.dividends_net)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="muted small">The money plan is not available.</p>}
+          <SettingsSection fields={moneyPlanFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+        </section>
+      )}
+
       {vsActual && accountType !== "kids" && <ForecastVsReality vsActual={vsActual} onOpenRecurring={onOpenRecurring} />}
 
       {recurring}
@@ -713,6 +834,7 @@ export function PlanView({
             initial={emptyPlanned}
             categories={categories}
             linkable={linkable}
+            canDividend={accountType === "personal"}
             busy={busy}
             error={errors.planned ?? ""}
             onSave={(draft) => void savePlanned(null, draft)}
@@ -735,6 +857,7 @@ export function PlanView({
                         initial={plannedDraftOf(item)}
                         categories={categories}
                         linkable={linkable}
+                        hideLink={item.dividend_group != null}
                         busy={busy}
                         error={errors.planned ?? ""}
                         onSave={(draft) => void savePlanned(item, draft)}
@@ -747,7 +870,10 @@ export function PlanView({
                     <td className="nowrap">{item.date}</td>
                     <td className={`numeric ${signClass(item.amount)}`}>{money(item.amount)}</td>
                     <td className="truncate-cell">{item.category ?? "—"}</td>
-                    <td className="truncate-cell" title={item.note}>{item.note || "—"}</td>
+                    <td className="truncate-cell" title={item.note}>
+                      {item.dividend_group != null && <span className="pay-tag" title="Part of a purchase paid by dividend">dividend</span>}
+                      {item.dividend_group != null ? ` ${item.note}` : item.note || "—"}
+                    </td>
                     <td className="truncate-cell">
                       {item.linked
                         ? `${ACCOUNT_TYPE_LABELS[item.linked.account_type]} · ${item.linked.date} · ${money(item.linked.amount)}`

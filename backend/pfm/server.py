@@ -174,6 +174,10 @@ class ForecastSettingsUpdate(BaseModel):
     tax_profit_excluded: Optional[list[int]] = None
     loan_start: Optional[str] = None
     loan_interest_rate: Optional[float] = None
+    forecast_end_year: Optional[int] = None
+    buffer_months: Optional[list[dict[str, Any]]] = None
+    buffer_month_cost: Union[str, int, float, None] = None
+    dividend_withholding_rate: Optional[float] = None
     closed_categories: Optional[dict[AccountType, list[int]]] = None
     roles: Optional[dict[str, Optional[int]]] = None  # a null category clears the role
 
@@ -232,6 +236,7 @@ class PlannedCreate(BaseModel):
     amount: Union[str, int, float]
     category_id: Optional[int] = None
     note: Optional[str] = None
+    paid_by_dividend: bool = False  # Personal only: a net expense Business pays out as a dividend
 
 
 class PlannedUpdate(BaseModel):
@@ -635,7 +640,8 @@ def create_app(database_path: Optional[Path] = None, frontend_dist: Path = FRONT
     @app.post("/api/planned")
     def post_planned(payload: PlannedCreate) -> dict[str, Any]:
         return core.add_planned(
-            database_path, payload.account_type, payload.date, payload.amount, payload.category_id, payload.note
+            database_path, payload.account_type, payload.date, payload.amount, payload.category_id, payload.note,
+            payload.paid_by_dividend,
         )
 
     @app.patch("/api/planned/{item_id}")

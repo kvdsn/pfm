@@ -70,12 +70,13 @@ The details are in [Categorization rules](docs/CATEGORIZATION_RULES.md).
 
 ### Forecast
 
-The year table and balance graph continue to the end of next year with projected amounts in italics, and a range on the graph. The **Forecast** switch beside the title turns this on and off. Hover a projected cell to see where an amount comes from.
+The year table and balance graph continue to the end of next year, or a later year you choose, with projected amounts in italics, and a range on the graph. The **Forecast** switch beside the title turns this on and off. Hover a projected cell to see where an amount comes from.
 
 The **Forecast** page holds what the projection is based on:
 
 - **Recurring payments:** subscriptions, loans and other payments found in your transactions. Confirm or ignore them, or add one by hand.
-- **Planned items:** one-off future income or expenses.
+- **Planned items:** one-off future income or expenses. A Personal purchase can be paid by dividend: Business pays the gross amount, Personal receives the net.
+- **Money plan:** for Business, a buffer target per year end in months of costs, and the room left above it each year, gross and net of dividend withholding.
 - **Salary** and **Entity transfers:** what Business pays Personal, keeping Personal above a minimum balance.
 - **Consulting:** income from days worked × day rate, the VAT on it, your days off, and a check of past payments.
 - **Corporate tax:** an estimate with advised prepayments. It is an estimate, not tax advice.

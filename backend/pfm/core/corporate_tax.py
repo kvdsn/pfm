@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .database import connect, format_money, parse_money
-from .forecast import _Context, _load, _project, _role, _round_cents
+from .forecast import _add, _Context, _index, _load, _project, _role, _round_cents
 from .forecast_settings import load_settings
 from .planned import _unlink
 from .recurring import _now
@@ -38,11 +38,11 @@ def _profit(context: _Context, lines: dict[str, Any], year: int) -> tuple[int, d
     """(profit, per-category result by name, director remuneration as a positive cost) for a calendar year.
 
     Business's booked counted transactions plus the projected lines of the year's remaining months, without the
-    VAT, corporate tax and transfer categories or the excluded ones; consulting income net of VAT.
+    VAT, corporate tax, dividend and transfer categories or the excluded ones; consulting income net of VAT.
     """
     data = context.entities["business"]
     settings = context.settings
-    left_out = {_role(context, role) for role in ("vat", "corporate_tax", "transfer_business")}
+    left_out = {_role(context, role) for role in ("vat", "corporate_tax", "transfer_business", "dividend_business")}
     left_out |= set(settings["tax_profit_excluded"])
     consulting, salary_role = _role(context, "consulting_income"), _role(context, "salary_business")
     entries = [(t["category_id"], t["cents"]) for t in data.transactions if t["date"].year == year]
@@ -152,6 +152,38 @@ def _estimate(context: _Context, lines: dict[str, Any], year: int) -> dict[str, 
         "surcharge_as_planned": format_money(_surcharge(settings, tax, [p + q for p, q in zip(prepaid, planned)])),
         "closed": not remaining, "assumptions": assumptions,
     }
+
+
+def project_later_years(context: _Context, lines: dict[str, Any], assumptions: list[str]) -> None:
+    """Add the estimated prepayments of each year after next year in the forecast, as projected lines of source
+    `corporate_tax` at the deadlines, unless the year has a planned or booked corporate tax item. The amounts are
+    what the advice gives with nothing prepaid, worked out year by year (a year's tax is no cost for its profit)."""
+    years = range(context.today.year + 2, context.last // 12 + 1)
+    if not years:
+        return
+    tax_cid = _role(context, "corporate_tax")
+    if tax_cid is None:
+        assumptions.append(f"No corporate tax category is chosen in the settings, so none is projected from {years[0]}.")
+        return
+    data = context.entities["business"]
+    for year in years:
+        has_tax = any(t["category_id"] == tax_cid and t["date"].year == year for t in data.transactions) or any(
+            line["category_id"] == tax_cid and month // 12 == year
+            for month, month_lines in lines["business"].items() for line in month_lines
+        )
+        if has_tax:
+            continue
+        profit, _, salary = _profit(context, lines, year)
+        tax = _tax(context.settings, profit, salary >= context.settings["tax_reduced_threshold"])
+        advised = _advice(context.settings, tax, [0, 0, 0, 0], [0, 1, 2, 3])
+        for (month, number), cents in zip(DEADLINES, advised):
+            if cents > 0:
+                day = date(year, month, number)
+                _add(lines, "business", _index(day), tax_cid, -cents, "corporate_tax", day,
+                     f"Estimated corporate tax prepayment for {year}")
+    assumptions.append(
+        f"From {years[0]}, corporate tax is estimated from the projected profit, prepaid at the four deadlines."
+    )
 
 
 def corporate_tax(database_path: Path, today: Optional[date] = None) -> dict[str, Any]:

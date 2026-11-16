@@ -1,4 +1,5 @@
-"""The forecast engine: each entity projected month by month from today to December of next year.
+"""The forecast engine: each entity projected month by month from today to December of next year, or of the
+`forecast_end_year` setting.
 
 Money is integer cents throughout; only the returned dictionaries are formatted. A month is
 identified by its index, year * 12 + month - 1.
@@ -91,11 +92,12 @@ class _Entity:
 class _Context:
     today: date
     current: int  # index of today's month
-    last: int  # index of December next year
+    last: int  # index of the last forecast December
     settings: dict[str, Any]
     salary: dict[int, tuple[int, int]]
     rates: list[tuple[date, int]]
     days_off: list[tuple[date, date, float]]
+    own_days_off: set[int] = field(default_factory=set)  # years with days off of their own (not only repeats)
     claims: list[dict[str, Any]] = field(default_factory=list)  # open reimbursement claims
     repayments: dict[str, set[int]] = field(default_factory=dict)  # entity -> transactions of linked repayments
     entities: dict[str, _Entity] = field(default_factory=dict)
@@ -164,12 +166,16 @@ def _linked_repayments(context: _Context, paid_ids: list[int]) -> dict[str, set[
 
 
 def _load(database_path: Path, today: date) -> _Context:
-    horizon_end = date(today.year + 1, 12, 31)
     with connect(database_path) as db:
+        settings = load_settings(db)
+        horizon_end = date(max(settings["forecast_end_year"], today.year + 1), 12, 31)
         context = _Context(
-            today, _index(today), _index(horizon_end), load_settings(db), load_salary(db),
+            today, _index(today), _index(horizon_end), settings, load_salary(db),
             load_day_rates(db), load_days_off(db, horizon_end),
         )
+        context.own_days_off = {
+            int(row[0][:4]) for row in db.execute("SELECT start_date FROM days_off WHERE repeat_weeks = 0")
+        }
         context.entities = {name: _load_entity(db, name, today, horizon_end) for name in ACCOUNT_TYPES}
         context.claims = load_open_claims(db, context.settings["reimbursement_delay_days"])
         context.repayments = _linked_repayments(context, load_repayment_ids(db))
@@ -273,6 +279,16 @@ def _vat_date(context: _Context, payment: date) -> date:
     return due if due >= _month_start(context.current) else context.today
 
 
+def _days_worked(context: _Context, year: int, month: int) -> float:
+    """Days worked in a month. A year after next year without days off of its own takes next year's days off in
+    the same month, so later years don't count every working day as worked."""
+    reference = context.today.year + 1
+    if year <= reference or year in context.own_days_off:
+        return days_worked(year, month, context.days_off)
+    off = len(working_days(reference, month)) - days_worked(reference, month, context.days_off)
+    return max(0.0, len(working_days(year, month)) - off)
+
+
 def _consulting_lines(context: _Context, lines: Lines, assumptions: list[str]) -> None:
     """Layers 3 and 4: projected consulting payments, and the VAT on them and on the latest actual one."""
     cid, settings = _role(context, "consulting_income"), context.settings
@@ -288,7 +304,7 @@ def _consulting_lines(context: _Context, lines: Lines, assumptions: list[str]) -
     payments: list[tuple[date, int]] = []
     for work in range(start, context.last - delay + 1):
         year, month = work // 12, work % 12 + 1
-        days = days_worked(year, month, context.days_off)
+        days = _days_worked(context, year, month)
         rate = day_rate_on(context.rates, date(year, month, 1))
         invoice = _round_cents(Decimal(str(days)) * rate * (100 + Decimal(str(settings["vat_rate"]))) / 100)
         if invoice <= 0:
@@ -764,9 +780,80 @@ def _flows(data: _Entity, entries: list[tuple[int, int]]) -> tuple[int, int]:
     return income, expense
 
 
+# --- The money plan ----------------------------------------------------------------------
+
+COST_SOURCES = ("recurring", "salary", "transfer", "baseline")  # what makes up a month of Business's costs
+
+
+def _derived_month_costs(context: _Context, lines: Lines) -> dict[int, int]:
+    """Per forecast year, Business's average monthly outflow in cents (positive) over the year's projected months,
+    from recurring, salary, transfer and baseline lines without VAT, corporate tax and dividends. The current year
+    with fewer than 3 projected months takes next year's figure. Run after the balance walk, so transfers count."""
+    left_out = {_role(context, role) for role in ("vat", "corporate_tax", "dividend_business")}
+    totals: dict[int, int] = {}
+    counts: dict[int, int] = {}
+    for month in context.months:
+        year = month // 12
+        counts[year] = counts.get(year, 0) + 1
+        totals[year] = totals.get(year, 0) - sum(
+            line["amount"] for line in lines["business"].get(month, [])
+            if line["source"] in COST_SOURCES and line["amount"] < 0 and line["category_id"] not in left_out
+        )
+    costs = {year: _round_cents(Decimal(totals[year]) / counts[year]) for year in totals}
+    this_year = context.today.year
+    if counts[this_year] < 3 and this_year + 1 in costs:
+        costs[this_year] = costs[this_year + 1]
+    return costs
+
+
+def _money_plan(context: _Context, lines: Lines, closings: dict[int, int]) -> list[dict[str, Any]]:
+    """Business's room per forecast year: the year-end balance against the buffer target (months of costs) and
+    what is left of it after the withholding on a dividend, the year's lowest month-end and its planned dividends.
+    The target and the room are null in a year without a target."""
+    settings = context.settings
+    derived = _derived_month_costs(context, lines)
+    override = settings["buffer_month_cost"]
+    rate = Decimal(str(settings["dividend_withholding_rate"]))
+    dividend_cid = _role(context, "dividend_personal")
+    rows: list[dict[str, Any]] = []
+    previous: Optional[int] = None
+    for year in sorted(derived):
+        year_months = [month for month in context.months if month // 12 == year]
+        cost = override or derived[year]
+        closing = closings[year * 12 + 11]
+        in_force = [entry["months"] for entry in settings["buffer_months"] if entry["year"] <= year]
+        target_months = in_force[-1] if in_force else None
+        target = room = room_net = new_net = None
+        if target_months is not None:
+            target = _round_cents(Decimal(str(target_months)) * cost)
+            room = closing - target
+            room_net = _round_cents(Decimal(room) * (100 - rate) / 100)
+            new_net = None if previous is None else room_net - previous
+        previous = room_net
+        lowest_month = min(year_months, key=lambda month: (closings[month], month))
+        lowest = closings[lowest_month]
+        dividends = sum(
+            line["amount"] for month in year_months for line in lines["personal"].get(month, [])
+            if dividend_cid is not None and line["category_id"] == dividend_cid
+        )
+        rows.append({
+            "year": str(year), "closing": format_money(closing), "month_cost": format_money(cost),
+            "month_cost_derived": not override, "target_months": target_months,
+            "target": None if target is None else format_money(target),
+            "room": None if room is None else format_money(room),
+            "room_net": None if room_net is None else format_money(room_net),
+            "new_net": None if new_net is None else format_money(new_net),
+            "lowest": format_money(lowest), "lowest_month": _month_key(lowest_month),
+            "lowest_months": round(lowest / cost, 1) if cost else None,
+            "dividends_net": format_money(dividends),
+        })
+    return rows
+
+
 def _entity_slice(
     context: _Context, entity: str, lines: Lines, closings: dict[int, int], flags: dict[int, list[str]],
     backtest_result: dict[str, Any], one_offs: list[dict[str, Any]], assumptions: list[str],
+    money_plan: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     data, today = context.entities[entity], context.today
     errors = backtest_result["errors"]
@@ -806,7 +893,7 @@ def _entity_slice(
         ],
         "opening": format_money(sum(a["balance_cents"] for a in data.accounts)),
         "months": months, "year_ends": year_ends, "one_offs": one_offs, "assumptions": assumptions,
-        "backtest": _format_backtest(backtest_result),
+        "backtest": _format_backtest(backtest_result), "money_plan": money_plan or [],
     }
 
 
@@ -826,13 +913,21 @@ def _project(context: _Context) -> tuple[Lines, dict[str, list[str]], dict[str, 
         assumptions[name].extend(shared)
     for name in ACCOUNT_TYPES:
         _baseline_lines(context, name, indexes[name], lines)
+    if context.last // 12 > context.today.year + 1:
+        for name in ("business", "personal"):
+            assumptions[name].append(
+                f"From {context.today.year + 2}, salary, day rate, days off and baselines repeat the latest values."
+            )
+    from .corporate_tax import project_later_years  # imported here: corporate_tax builds on this module
+    project_later_years(context, lines, assumptions["business"])
     return lines, assumptions, indexes
 
 
 def forecast(database_path: Path, today: Optional[date] = None) -> dict[str, dict[str, Any]]:
     """Every entity's projection from today's month to December of next year, keyed by account type.
 
-    Entities are computed together because the transfers link Personal and Business.
+    Entities are computed together because the transfers link Personal and Business. Business's slice also has
+    `money_plan`, one row per forecast year; the other entities' is an empty list.
     """
     context = _load(database_path, today or date.today())
     lines, assumptions, indexes = _project(context)
@@ -842,6 +937,7 @@ def forecast(database_path: Path, today: Optional[date] = None) -> dict[str, dic
         name: _entity_slice(
             context, name, lines, closings[name], flags[name], backtests[name],
             _one_offs(context, name, indexes[name]), assumptions[name],
+            _money_plan(context, lines, closings["business"]) if name == "business" else None,
         )
         for name in ACCOUNT_TYPES
     }

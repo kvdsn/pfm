@@ -51,7 +51,8 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/forecast.py`: the forecast for all entities at once, the backtest and the consulting check.
   - `core/forecast_settings.py`: settings (defaults resolved at read time), salary, day rates, days off, and the Belgian calendar.
   - `core/forecast_history.py`: the monthly forecast snapshots (taken by `GET /api/forecast`) and the forecast-vs-reality comparison.
-  - `core/planned.py`, `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
+  - `core/forecast.py` also builds Business's `money_plan` (buffer target and room per year). The horizon is `forecast_end_year`.
+  - `core/planned.py` (including purchases paid by dividend: three lines sharing `dividend_group`), `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
 
 **Frontend** (`frontend/src`):
 - **`App.tsx`:** global state, the page switch, the Forecast switch (`pfm.showForecast` in localStorage), and every global keyboard shortcut. Its data loading is in `dataHooks.ts` (report, transactions, balance history, budgets, forecast vs reality), each with a guard against late responses.
@@ -89,7 +90,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
 - **Settings:** every key in `forecast_settings.DEFAULTS` must also be a field of `ForecastSettingsUpdate`, or the endpoint drops it silently. A test checks this.
 - **Forecast:**
   - Role categories and closed categories never get a baseline.
-  - Corporate tax comes only from planned items.
+  - Corporate tax comes only from planned items, except after next year: a year with none planned or booked gets the estimate (`project_later_years`).
   - Recurring candidates are never stored. Only confirmed or ignored decisions are.
   - Snapshots are taken once per month and never replaced. Category merge and remove repoint their lines.
 - **New tables** (budgets, forecast, recurring, reimbursements) come from `SCHEMA` with `CREATE TABLE IF NOT EXISTS`, so they need no migration backup. New columns go through `ADDED_COLUMNS` with a backfill.

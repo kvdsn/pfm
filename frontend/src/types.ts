@@ -351,6 +351,22 @@ export type ForecastMonth = {
   flags: "transfer_short"[];
 };
 export type BacktestVariant = { baseline_months: number; baseline_weighted: boolean };
+/** One forecast year of Business's money plan; money as formatted strings, null where no target is in force. */
+export type MoneyPlanRow = {
+  year: string;
+  closing: string;
+  month_cost: string;
+  month_cost_derived: boolean;
+  target_months: number | null;
+  target: string | null;
+  room: string | null;
+  room_net: string | null;
+  new_net: string | null;
+  lowest: string;
+  lowest_month: string;
+  lowest_months: number | null;
+  dividends_net: string;
+};
 export type Forecast = {
   account_type: AccountType;
   today: string;
@@ -360,6 +376,8 @@ export type Forecast = {
   year_ends: { year: string; closing: string; low: string; high: string }[];
   one_offs: { transaction_id: number; date: string; merchant: string; category: string; amount: string }[];
   assumptions: string[];
+  /** Business only: one row per forecast year (an empty list for the others, or an older server). */
+  money_plan?: MoneyPlanRow[];
   backtest: {
     origins: number;
     horizons: { months: number; p10: string; p90: string; mae: string }[];
@@ -398,6 +416,14 @@ export type ForecastSettings = {
   /** Director loan: the day Entity transfers start to count as the loan, and the simple interest rate in percent. */
   loan_start: string;
   loan_interest_rate: number;
+  /** The last forecast year; 0 means next year. */
+  forecast_end_year: number;
+  /** Business's year-end target in months of costs, each in force until the next. */
+  buffer_months: { year: number; months: number }[];
+  /** A fixed cost of one month for the target; "0,00" derives it from the forecast. */
+  buffer_month_cost: string;
+  /** The share of a dividend that is withheld, in percent. */
+  dividend_withholding_rate: number;
   roles: Record<ForecastRole, number | null>;
   closed_categories: Record<AccountType, number[]>;
 };
@@ -441,6 +467,9 @@ export type PlannedItem = {
   category: string | null;
   note: string;
   linked: { id: number; account_type: AccountType; date: string; amount: string; note: string } | null;
+  /** The id that ties a purchase paid by dividend to its two dividend lines; null for other items. */
+  dividend_group?: number | null;
+  paid_by_dividend?: boolean;
 };
 
 /** A transaction as a claim or a possible repayment shows it. */

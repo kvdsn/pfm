@@ -275,6 +275,10 @@ ADDED_COLUMNS = {
     "salary_schedules": {
         "minimum_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(minimum_cents >= 0)",
     },
+    # Ties the three lines of a purchase paid by dividend together; NULL for every other planned item.
+    "planned_items": {
+        "dividend_group": "INTEGER",
+    },
     # Days off that repeat every so many weeks (0: once), optionally until a date; existing rows happen once.
     "days_off": {
         "repeat_weeks": "INTEGER NOT NULL DEFAULT 0 CHECK(repeat_weeks BETWEEN 0 AND 52)",

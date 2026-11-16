@@ -38,13 +38,25 @@ DEFAULTS: dict[str, Any] = {
     # The director loan: Entity transfers to Personal from this date on, with simple interest at this rate.
     "loan_start": "2026-01-01",
     "loan_interest_rate": 3.5,
+    # The last forecast year; 0 means next year. Otherwise next year to the current year + 9.
+    "forecast_end_year": 0,
+    # Business's year-end target in months of costs: [{"year", "months"}], each in force until the next.
+    "buffer_months": [],
+    # A fixed cost of one month for the target; 0 derives it from the forecast.
+    "buffer_month_cost": 0,
+    # The share of a dividend that is withheld, in percent.
+    "dividend_withholding_rate": 25,
 }
-MONEY_SETTINGS = ("personal_min_balance", "business_buffer", "tax_reduced_threshold", "tax_reduced_band")
+MAX_BUFFER_MONTHS = 120
+MONEY_SETTINGS = (
+    "personal_min_balance", "business_buffer", "tax_reduced_threshold", "tax_reduced_band", "buffer_month_cost",
+)
 PERCENT_SETTINGS = {
     "tax_reduced_rate": ("Reduced rate", 0, 100),
     "tax_standard_rate": ("Standard rate", 0, 100),
     "tax_base_rate": ("Base rate", 0, 20),
     "loan_interest_rate": ("Loan interest rate", 0, 20),
+    "dividend_withholding_rate": ("Dividend withholding rate", 0, 99),
 }
 WHOLE_RANGES = {
     "payment_delay_months": (0, 6),
@@ -64,6 +76,8 @@ ROLES = {
     "transfer_personal": ("personal", "Entity transfer"),
     "loan_interest_business": ("business", "Director loan interest"),
     "loan_interest_personal": ("personal", "Director loan interest"),
+    "dividend_business": ("business", "Dividends"),
+    "dividend_personal": ("personal", "Dividends"),
 }
 DEFAULT_CLOSED: dict[str, list[str]] = {"personal": [], "business": [], "kids": []}
 
@@ -126,6 +140,7 @@ def load_settings(db: sqlite3.Connection) -> dict[str, Any]:
     stored = _stored(db)
     settings = {key: stored.get(key, default) for key, default in DEFAULTS.items()}
     settings["tax_profit_excluded"] = list(settings["tax_profit_excluded"])
+    settings["buffer_months"] = [dict(entry) for entry in settings["buffer_months"]]
     saved_roles = stored.get("roles", {})
     settings["roles"] = {
         role: saved_roles[role] if role in saved_roles else _category_id_by_name(db, entity, name)
@@ -146,6 +161,28 @@ def get_settings(database_path: Path) -> dict[str, Any]:
     with connect(database_path) as db:
         settings = load_settings(db)
     return {**settings, **{key: format_money(settings[key]) for key in MONEY_SETTINGS}}
+
+
+def _end_year(value: Any) -> int:
+    """0 (next year) or a year from next year to the current year + 9."""
+    this_year = date.today().year
+    year = _whole(value, "Forecast end year", 0, 9999)
+    if year != 0 and not this_year + 1 <= year <= this_year + 9:
+        raise ValueError(f"Forecast end year must be 0 (next year) or from {this_year + 1} to {this_year + 9}")
+    return year
+
+
+def _buffer_months(value: Any) -> list[dict[str, Any]]:
+    """The buffer target as a list of {"year", "months"}, one per year, oldest first."""
+    if not isinstance(value, list) or any(not isinstance(entry, dict) for entry in value):
+        raise ValueError("Buffer months must be a list of years with months")
+    found: dict[int, Union[int, float]] = {}
+    for entry in value:
+        year = _whole(entry.get("year"), "Buffer year", 2000, 2200)
+        if year in found:
+            raise ValueError(f"Buffer year {year} is listed twice")
+        found[year] = _number(entry.get("months"), "Buffer months", 0, MAX_BUFFER_MONTHS)
+    return [{"year": year, "months": found[year]} for year in sorted(found)]
 
 
 def _check_category(db: sqlite3.Connection, account_type: str, category_id: Any, label: str) -> int:
@@ -178,6 +215,10 @@ def _validated_changes(db: sqlite3.Connection, changes: dict[str, Any], current:
             if not isinstance(value, list):
                 raise ValueError("Excluded categories must be a list of category ids")
             valid[key] = sorted({_check_category(db, "business", cid, "An excluded category") for cid in value})
+        elif key == "forecast_end_year":
+            valid[key] = _end_year(value)
+        elif key == "buffer_months":
+            valid[key] = _buffer_months(value)
         elif key == "loan_start":
             valid[key] = _parse_date(value, "Loan start").isoformat()
         elif key == "salary_net_percent":

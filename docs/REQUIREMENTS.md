@@ -71,10 +71,12 @@ How the app behaves, in more detail than the README. [CATEGORIZATION_RULES.md](C
 
 ## Forecast
 
-The forecast runs from the current month to December of next year, for all entities at once. Each projected line names its source:
+The forecast runs from the current month to December of next year, or of a later year set in the Baselines settings (up to 9 years ahead), for all entities at once. Years after next year repeat the latest salary schedule, day rate and baselines, and take next year's days off month by month unless they have days off of their own. Each projected line names its source:
 
 - **Recurring payments:** confirmed ones, following their cadence, amount schedule and end date.
 - **Planned items:** one-off entries you add. They can be linked across entities.
+  - **Paid by dividend:** a Personal expense can be paid by dividend. The app adds a Personal dividend income of the same net amount and a Business dividend of net ÷ (1 − withholding), 25% by default, all on the same date. The three lines change and go together.
+- **Later corporate tax:** a year after next year with no corporate tax planned or booked gets the estimated prepayments at the four deadlines.
 - **Consulting income:** days worked × day rate × (1 + VAT rate).
   - **Days worked:** working days (Monday to Friday, minus Belgian public holidays) minus your days off. Days off can be half days, and can repeat every 1 to 4 weeks.
   - **Payment:** on the last working day of the month after the work.
@@ -85,13 +87,18 @@ The forecast runs from the current month to December of next year, for all entit
 - **Baselines:** every other category's median of its last 6 complete months, leaving out recurring payments and one-offs above 3× its typical month. You can mark a category as closed to give it no baseline.
 - **Range:** a rolling backtest gives the balance a low and high band.
 
-The Forecast page also estimates two things:
+The Forecast page also estimates these:
 
 - **Corporate tax:**
   - **Rate:** 20% on the first €100,000 and 25% above, when the year's salary reaches €51,000; otherwise 25%.
   - **Prepayments:** for the deadlines of 10 April, 10 July, 10 October and 20 December, with the surcharge for prepaying too little.
   - **Advice:** advised prepayments, which can replace that year's future corporate tax planned items.
   - **Settings:** all of these rules are settings, to confirm with your accountant.
+- **Money plan** (Business):
+  - **Buffer target:** months of costs at each year end, each in force until the next one you set.
+  - **A month of costs:** the year's average monthly Business outflow from recurring payments, salary, Entity transfers and baselines, without VAT, corporate tax, dividends and planned items. A current year with fewer than 3 projected months uses next year's. A fixed amount can replace it.
+  - **Per year:** the year-end balance, the target, the room above it, the room net of withholding, the net room added that year, the lowest month-end and the dividends paid.
+  - The Business buffer for Entity transfers stays a separate floor.
 - **Director loan:** Entity transfers from the loan start count as a loan to the director. It carries simple daily interest (3.5% by default), never on a negative balance.
 
 ### Forecast vs reality

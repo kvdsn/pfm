@@ -622,7 +622,7 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
 
 /* Plan view */
 .plan-view { display: grid; gap: 16px; }
-.plan-view .plan-panel { margin: 0; }
+.plan-view .plan-panel { margin: 0; min-width: 0; }
 /* Wide screens (the app is mostly used at 1728px): settings sections side by side, the outlook and planned items across. */
 .plan-columns { display: grid; gap: 16px; }
 @media (min-width: 1400px) {
@@ -675,6 +675,12 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
 .plan-form label.plan-check { display: flex; align-items: center; gap: 6px; color: var(--ink); }
 .plan-form label.plan-check input { width: auto; margin: 0; padding: 0; flex: none; }
 .plan-form label > .muted { color: var(--muted); }
+.money-plan-table th, .money-plan-table td .muted { white-space: normal; }
+.money-plan-table th { width: 11.5%; }
+.money-plan-table th:first-child { width: 8%; }
+.plan-buffer { display: grid; gap: 8px; }
+.plan-buffer-row { display: flex; align-items: flex-end; gap: 8px; }
+.plan-buffer-row label { flex: 1 1 0; min-width: 0; }
 .plan-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 12px; }
 .plan-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .plan-actions { display: flex; gap: 8px; }

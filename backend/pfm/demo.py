@@ -209,6 +209,12 @@ def build_demo(folder: Path, today: Optional[date] = None, seed: int = 7) -> Pat
     for year in (today.year, today.year + 1):
         core.set_salary(database, str(year), 3200, 12)
     core.set_day_rate(database, f"{today.year - 1}-01-01", DAY_RATE)
+    # A buffer target and one purchase paid by dividend, so the Forecast page's money plan has data.
+    core.set_settings(database, {"buffer_months": [{"year": today.year, "months": 3}, {"year": today.year + 1, "months": 4}]})
+    core.add_planned(
+        database, "personal", (today + timedelta(days=60)).isoformat(), -1500, ids["personal", "Health & medical"],
+        "New bicycle", paid_by_dividend=True,
+    )
     core.set_budget(database, "personal", ids["personal", "Dining out"], str(today.year), 1500)
     return database
 

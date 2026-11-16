@@ -742,7 +742,7 @@ class InputEndpointTests(ForecastFixture):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual((body["account_type"], body["opening"]), ("business", "1000.00"))
-        self.assertEqual(set(body), {"account_type", "today", "accounts", "opening", "months", "year_ends", "one_offs", "assumptions", "backtest"})
+        self.assertEqual(set(body), {"account_type", "today", "accounts", "opening", "months", "year_ends", "one_offs", "assumptions", "backtest", "money_plan"})
         self.assertEqual(set(body["months"][0]), {"month", "partial", "lines", "actual", "income", "expense", "net", "closing", "low", "high", "flags"})
         self.assertEqual(self.client.get("/api/forecast", params={"account_type": "nobody"}).status_code, 422)
         self.assertEqual(self.client.put("/api/forecast/settings", json={"closed_categories": {"nowhere": []}}).status_code, 422)
