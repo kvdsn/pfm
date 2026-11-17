@@ -710,7 +710,7 @@ class InputEndpointTests(ForecastFixture):
         second = self.client.post("/api/planned", json={"account_type": "business", "date": "2027-06-01", "amount": 100}).json()
         self.assertEqual((first["amount"], first["category"], first["linked"]), ("-5000.00", "Corporate tax", None))
         listed = self.client.get("/api/planned", params={"account_type": "business"}).json()
-        self.assertEqual([item["id"] for item in listed], [second["id"], first["id"]])  # newest date first
+        self.assertEqual([item["id"] for item in listed], [first["id"], second["id"]])  # earliest date first
         patched = self.client.patch(f"/api/planned/{first['id']}", json={"account_type": "business", "amount": -6000, "category_id": None}).json()
         self.assertEqual((patched["amount"], patched["category_id"], patched["note"]), ("-6000.00", None, "Tax"))
         wrong_entity = self.client.patch(f"/api/planned/{first['id']}", json={"account_type": "personal", "note": "x"})

@@ -44,7 +44,7 @@ def list_planned(database_path: Path, account_type: str) -> list[dict[str, Any]]
     """The entity's planned items, newest date first."""
     require_account_type(account_type)
     with connect(database_path) as db:
-        rows = db.execute(SELECT + " WHERE p.account_type = ? ORDER BY p.date DESC, p.id DESC", (account_type,))
+        rows = db.execute(SELECT + " WHERE p.account_type = ? ORDER BY p.date, p.id", (account_type,))
         return [_view(row) for row in rows.fetchall()]
 
 
