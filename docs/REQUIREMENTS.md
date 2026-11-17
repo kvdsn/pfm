@@ -75,6 +75,8 @@ The forecast runs from the current month to December of next year, or of a later
 
 - **Recurring payments:** confirmed ones, following their cadence, amount schedule and end date.
 - **Planned items:** one-off entries you add. They can be linked across entities.
+  - **Booking:** an item is booked against the transaction that paid it, only when you confirm. The app suggests the best match (same sign, within 10% of the amount, booked from 30 days before to 45 days after the planned date, in the item's category or Uncategorized) with Confirm and "Not this one", which suggests the next candidate. Booked items leave the forecast, because the transaction counts; Unbook brings one back. Deleting the transaction or undoing its import unbooks the item.
+  - **Overdue:** an unbooked item dated before today counts in the forecast at today's date for 60 days, then drops out. The list shows unbooked items first, earliest date first, then booked ones. Suggestions to confirm show under "Needs attention".
   - **Paid by dividend:** a Personal expense can be paid by dividend. The app adds a Personal dividend income of the same net amount and a Business dividend of net ÷ (1 − withholding), 25% by default, all on the same date. The three lines change and go together.
 - **Later corporate tax:** a year after next year with no corporate tax planned or booked gets the estimated prepayments at the four deadlines.
 - **Consulting income:** days worked × day rate × (1 + VAT rate).

@@ -55,7 +55,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/forecast.py` also builds Business's `money_plan` (buffer target and room per year). The horizon is `forecast_end_year`.
   - `core/liquidation_reserve.py`: reserves formed and paid out (lines with source `reserve`, run after the later-year corporate tax); payouts are movements of the director loan (`loan_movements` in `core/director_loan.py`, shared with the money plan).
   - `core/payout_routes.py`: the ways to take money out, compared per 1,000 net (`GET /api/forecast/payout-routes`).
-  - `core/planned.py` (including purchases paid by dividend: three lines sharing `dividend_group`), `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
+  - `core/planned.py` (including purchases paid by dividend: three lines sharing `dividend_group`; booking against transactions and the match suggestions), `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
 
 **Frontend** (`frontend/src`):
 - **`App.tsx`:** global state, the page switch, the Forecast switch (`pfm.showForecast` in localStorage), and every global keyboard shortcut. Its data loading is in `dataHooks.ts` (report, transactions, balance history, budgets, forecast vs reality), each with a guard against late responses.
@@ -93,6 +93,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
 - **Settings:** every key in `forecast_settings.DEFAULTS` must also be a field of `ForecastSettingsUpdate`, or the endpoint drops it silently. A test checks this.
 - **Forecast:**
   - Role categories and closed categories never get a baseline.
+  - Planned items are booked only on the owner's confirmation (`planned_items.transaction_id`, `planned_match_dismissals`). A booked item with a live transaction leaves the forecast; an unbooked one dated up to 60 days back counts at today, older ones drop out (`load_planned`).
   - Corporate tax comes only from planned items, except after next year: a year with none planned or booked gets the estimate (`project_later_years`).
   - Recurring candidates are never stored. Only confirmed or ignored decisions are.
   - Snapshots are taken once per month and never replaced. Category merge and remove repoint their lines.

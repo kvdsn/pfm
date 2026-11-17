@@ -207,7 +207,8 @@ def apply_corporate_tax(database_path: Path, year: str, today: Optional[date] = 
         if cid is None:
             raise ValueError("Choose the corporate tax category in the forecast settings first")
         old = [row["id"] for row in db.execute(
-            "SELECT id FROM planned_items WHERE account_type = 'business' AND category_id = ? AND date >= ? AND date <= ?",
+            "SELECT id FROM planned_items WHERE account_type = 'business' AND category_id = ? AND date >= ? AND date <= ? "
+            "AND transaction_id IS NULL",  # one booked by a payment stays: that payment counts as prepaid
             # Only this year's items: from today or 1 January, whichever is later.
             (cid, max(today.isoformat(), f"{year}-01-01"), f"{year}-12-31"),
         )]

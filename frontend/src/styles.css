@@ -685,6 +685,13 @@ button.plan-tile:focus-visible { outline: 2px solid var(--primary); outline-offs
 .plan-table input[type="date"] { min-width: 120px; }
 .plan-table td.rules-actions .button + .button { margin-left: 4px; }
 .plan-table .button { min-height: 26px; padding: 0 8px; }
+.plan-table td.plan-status { max-width: 260px; font-size: var(--text-xs); }
+@media (min-width: 1280px) { .plan-table td.plan-status { min-width: 240px; max-width: 320px; } }
+.plan-table .plan-suggestion { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.plan-table .plan-suggestion > span:first-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-table .plan-suggestion-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.plan-table tr.plan-booked td { color: var(--muted); }
+.plan-table tr.plan-booked td.numeric.negative, .plan-table tr.plan-booked td.numeric.positive { color: var(--muted); }
 .plan-form { margin-top: 8px; max-width: 760px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .plan-form > .plan-check, .plan-form > fieldset, .plan-form > .muted, .plan-form > .plan-roles, .plan-form > .recurring-error, .plan-form > .plan-actions { grid-column: 1 / -1; }
 .plan-form > .muted { margin: 0; font-size: var(--text-xs); }

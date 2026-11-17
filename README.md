@@ -77,7 +77,7 @@ The **Forecast** page starts with a summary: the end of this year, the lowest mo
 The panels are:
 
 - **Recurring payments:** subscriptions, loans and other payments found in your transactions. Confirm or ignore them, or add one by hand.
-- **Planned items:** one-off future income or expenses. A Personal purchase can be paid by dividend: Business pays the gross amount, Personal receives the net.
+- **Planned items:** one-off future income or expenses, booked against the transaction that pays them when you confirm. A Personal purchase can be paid by dividend: Business pays the gross amount, Personal receives the net.
 - **Money plan:** for Business, a buffer target per year end in months of costs, and the room left above it each year, gross and net of dividend withholding.
 - **Liquidation reserve:** the reserves already formed and a share of each year's profit, with the tax on forming them and the payouts that pay down the director loan.
 - **Salary** and **Entity transfers:** what Business pays Personal, keeping Personal above a minimum balance.

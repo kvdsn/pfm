@@ -493,6 +493,11 @@ export type PlannedItem = {
   /** The id that ties a purchase paid by dividend to its two dividend lines; null for other items. */
   dividend_group?: number | null;
   paid_by_dividend?: boolean;
+  /** `booked`: a confirmed transaction paid it (left out of the forecast); `overdue`: unbooked and dated before today. */
+  status?: "booked" | "overdue" | "upcoming";
+  booked?: { transaction_id: number; date: string; amount: string; merchant: string } | null;
+  /** The transaction that probably paid an unbooked item, for the owner to confirm or reject. */
+  suggestion?: { transaction_id: number; date: string; amount: string; merchant: string; category: string | null } | null;
 };
 
 /** A transaction as a claim or a possible repayment shows it. */

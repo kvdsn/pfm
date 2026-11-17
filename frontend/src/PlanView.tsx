@@ -779,6 +779,21 @@ export function PlanView({
       onNotice("Removed the planned item.");
     }, "Could not remove the planned item");
 
+  const bookPlanned = (item: PlannedItem, transactionId: number) =>
+    run("planned", async () => {
+      await api(`/api/planned/${item.id}/booking`, { method: "PUT", json: { account_type: accountType, transaction_id: transactionId } });
+      onNotice("Booked the planned item.");
+    }, "Could not book the planned item");
+  const unbookPlanned = (item: PlannedItem) =>
+    run("planned", async () => {
+      await api(`/api/planned/${item.id}/booking?account_type=${accountType}`, { method: "DELETE" });
+      onNotice("The planned item counts in the forecast again.");
+    }, "Could not unbook the planned item");
+  const dismissSuggestion = (item: PlannedItem, transactionId: number) =>
+    run("planned", async () => {
+      await api(`/api/planned/${item.id}/dismissals`, { method: "POST", json: { account_type: accountType, transaction_id: transactionId } });
+    }, "Could not dismiss the suggestion");
+
   // Salary, day rates and days off
   const saveSalary = (year: string, amount: string, lastMonth: number, minimum: string) =>
     run("salary", async () => {
@@ -923,11 +938,13 @@ export function PlanView({
     ? forecast.accounts.filter((account) => Date.parse(forecast.today) - Date.parse(account.as_of) > STALE_BALANCE_DAYS * 86_400_000)
     : [];
   const consultingIssues = consulting ? consulting.summary.late + consulting.summary.differs + consulting.summary.vat_missing : 0;
+  const plannedSuggestions = planned.filter((item) => item.status !== "booked" && item.suggestion).length;
   const attention: { key: string; tab: ForecastTab; selector: string; text: string; count: number }[] = [
     ...(shortMonths.length ? [{ key: "short", tab: "outlook" as const, selector: 'section[aria-label="Outlook"]', count: shortMonths.length, text: `${plural(shortMonths.length, "month")} with a transfer short` }] : []),
     ...(staleAccounts.length ? [{ key: "stale", tab: "outlook" as const, selector: 'section[aria-label="Outlook"]', count: staleAccounts.length, text: `${plural(staleAccounts.length, "balance")} more than ${STALE_BALANCE_DAYS} days old` }] : []),
     ...(consultingIssues ? [{ key: "consulting", tab: "check" as const, selector: 'section[aria-label="Consulting payments"]', count: consultingIssues, text: `${plural(consultingIssues, "consulting payment")} late, differing or without VAT` }] : []),
     ...(recurringCandidates ? [{ key: "recurring", tab: "inputs" as const, selector: "#section-recurring", count: recurringCandidates, text: `${plural(recurringCandidates, "suggested recurring payment")} to decide` }] : []),
+    ...(plannedSuggestions ? [{ key: "planned", tab: "inputs" as const, selector: 'section[aria-label="Planned items"]', count: plannedSuggestions, text: `${plural(plannedSuggestions, "planned item")} with a payment to confirm` }] : []),
   ];
   const attentionTotal = attention.reduce((sum, item) => sum + item.count, 0);
   const badge: Record<ForecastTab, number> = { outlook: 0, check: 0, inputs: 0 };
@@ -1223,12 +1240,12 @@ export function PlanView({
           <div className="table-scroll">
             <table className="rules-table plan-table" aria-label="Planned items">
               <thead>
-                <tr><th>Date</th><th className="numeric">Amount</th><th>Category</th><th>Note</th><th>Linked</th><th /></tr>
+                <tr><th>Date</th><th className="numeric">Amount</th><th>Category</th><th>Note</th><th>Linked</th><th>Status</th><th /></tr>
               </thead>
               <tbody>
                 {planned.map((item) => item.id === editingId ? (
                   <tr key={item.id}>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <PlannedForm
                         label="Edit planned item"
                         initial={plannedDraftOf(item)}
@@ -1243,7 +1260,7 @@ export function PlanView({
                     </td>
                   </tr>
                 ) : (
-                  <tr key={item.id}>
+                  <tr key={item.id} className={item.status === "booked" ? "plan-booked" : undefined}>
                     <td className="nowrap">{item.date}</td>
                     <td className={`numeric ${signClass(item.amount)}`}>{money(item.amount)}</td>
                     <td className="truncate-cell">{item.category ?? "—"}</td>
@@ -1255,6 +1272,26 @@ export function PlanView({
                       {item.linked
                         ? `${ACCOUNT_TYPE_LABELS[item.linked.account_type]} · ${item.linked.date} · ${money(item.linked.amount)}`
                         : "—"}
+                    </td>
+                    <td className="plan-status">
+                      {item.status === "booked" && item.booked && (
+                        <>
+                          <span className="pay-tag" title={item.booked.merchant}>booked</span>{" "}
+                          <span title={item.booked.merchant}><span className="nowrap">{item.booked.date}</span> · <span className="nowrap">{money(item.booked.amount)}</span></span>{" "}
+                          <button className="button secondary" aria-label={`Unbook planned item ${item.date}`} disabled={busy} onClick={() => void unbookPlanned(item)}>Unbook</button>
+                        </>
+                      )}
+                      {item.status === "overdue" && <span className="pay-tag tag-amber" title="Dated before today and not booked; the forecast counts it today">overdue</span>}
+                      {item.status !== "booked" && item.suggestion && (
+                        <div className="plan-suggestion">
+                          <span title={item.suggestion.merchant}>Paid? {item.suggestion.date} · {money(item.suggestion.amount)} · {item.suggestion.merchant || "—"}</span>
+                          <span className="plan-suggestion-actions">
+                            <button className="button secondary" aria-label={`Confirm payment of planned item ${item.date}`} disabled={busy} onClick={() => void bookPlanned(item, item.suggestion!.transaction_id)}>Confirm</button>
+                            <button className="button secondary" aria-label={`Not this transaction for planned item ${item.date}`} disabled={busy} onClick={() => void dismissSuggestion(item, item.suggestion!.transaction_id)}>Not this one</button>
+                          </span>
+                        </div>
+                      )}
+                      {item.status !== "booked" && !item.suggestion && item.status !== "overdue" && "—"}
                     </td>
                     <td className="rules-actions">
                       <button className="button secondary" aria-label={`Edit planned item ${item.date}`} disabled={busy} onClick={() => { setAdding(false); setEditingId(item.id); }}>Edit</button>

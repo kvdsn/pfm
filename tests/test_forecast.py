@@ -173,13 +173,14 @@ class RecurringAndPlannedTests(ForecastFixture):
         category = self.cat["business", "Corporate tax"]
         core.add_planned(self.database, "business", "2027-03-31", "-5.000,00", category, "Tax")
         core.add_planned(self.database, "business", "2026-10-25", -100, None, "Today")
-        core.add_planned(self.database, "business", "2026-10-01", -999, None, "Past")
+        core.add_planned(self.database, "business", "2026-10-01", -999, None, "Past")  # 24 days ago: counts today
+        core.add_planned(self.database, "business", "2026-08-01", -888, None, "Long past")  # over 60 days ago: dropped
         core.add_planned(self.database, "personal", "2027-03-31", -1, None, "Other entity")
         planned = [l for m in self.run_forecast("business")["months"] for l in m["lines"] if l["source"] == "planned"]
         self.assertEqual([(l["date"], l["amount"], l["detail"]) for l in planned],
-                         [("2026-10-25", "-100.00", "Today"), ("2027-03-31", "-5000.00", "Tax")])
-        self.assertEqual(planned[0]["category"], "Uncategorized")
-        self.assertEqual(planned[1]["category"], "Corporate tax")
+                         [("2026-10-25", "-999.00", "Past"), ("2026-10-25", "-100.00", "Today"), ("2027-03-31", "-5000.00", "Tax")])
+        self.assertEqual(planned[1]["category"], "Uncategorized")
+        self.assertEqual(planned[2]["category"], "Corporate tax")
 
 
 class ConsultingTests(ForecastFixture):

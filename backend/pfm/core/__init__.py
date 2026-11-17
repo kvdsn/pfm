@@ -73,7 +73,16 @@ from .parsing import (
     parse_export,
     transaction_fingerprint,
 )
-from .planned import add_planned, delete_planned, link_planned, list_planned, update_planned
+from .planned import (
+    add_planned,
+    book_planned,
+    delete_planned,
+    dismiss_match,
+    link_planned,
+    list_planned,
+    unbook_planned,
+    update_planned,
+)
 from .reimbursements import add_claim, delete_claim, list_claims, update_claim
 from .recurring import (
     add_recurring,

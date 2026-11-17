@@ -355,6 +355,16 @@ def undo_import(database_path: Path, import_id: int) -> dict[str, Any]:
                 f"WHERE {column} IN (SELECT id FROM transactions WHERE import_id = ?)",
                 (import_id,),
             )
+        # Planned items booked by these transactions become unbooked; their dismissed matches go with them.
+        db.execute(
+            "UPDATE planned_items SET transaction_id = NULL "
+            "WHERE transaction_id IN (SELECT id FROM transactions WHERE import_id = ?)",
+            (import_id,),
+        )
+        db.execute(
+            "DELETE FROM planned_match_dismissals WHERE transaction_id IN (SELECT id FROM transactions WHERE import_id = ?)",
+            (import_id,),
+        )
         deleted = db.execute("DELETE FROM transactions WHERE import_id = ?", (import_id,))
         db.execute("DELETE FROM imports WHERE id = ?", (import_id,))
         remove_empty_statements(db)

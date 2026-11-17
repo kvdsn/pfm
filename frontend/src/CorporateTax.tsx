@@ -9,7 +9,7 @@ const ADVICE_NOTE = "Corporate tax prepayment (advised)";
 /** The planned corporate-tax items that "Use advice" would replace: the year's, dated today or later. */
 function replacedItems(year: CorporateTaxYear, planned: PlannedItem[], taxCategoryId: number | null, today: string) {
   return planned.filter((item) =>
-    taxCategoryId !== null && item.category_id === taxCategoryId && item.date >= today && item.date.startsWith(`${year.year}-`));
+    taxCategoryId !== null && item.category_id === taxCategoryId && item.status !== "booked" && item.date >= today && item.date.startsWith(`${year.year}-`));
 }
 
 function YearEstimate({

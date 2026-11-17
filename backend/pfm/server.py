@@ -266,6 +266,11 @@ class PlannedLink(BaseModel):
     linked_item_id: Optional[int] = None
 
 
+class PlannedBooking(BaseModel):
+    account_type: AccountType
+    transaction_id: int
+
+
 def _validate_period(month: Optional[str], year: Optional[str]) -> None:
     if month is not None and (len(month) != 7 or month[4] != "-"):
         raise HTTPException(status_code=400, detail="Month must use YYYY-MM format")
@@ -677,6 +682,18 @@ def create_app(database_path: Optional[Path] = None, frontend_dist: Path = FRONT
     @app.put("/api/planned/{item_id}/link")
     def put_planned_link(item_id: int, payload: PlannedLink) -> dict[str, Any]:
         return core.link_planned(database_path, payload.account_type, item_id, payload.linked_item_id)
+
+    @app.put("/api/planned/{item_id}/booking")
+    def put_planned_booking(item_id: int, payload: PlannedBooking) -> dict[str, Any]:
+        return core.book_planned(database_path, payload.account_type, item_id, payload.transaction_id)
+
+    @app.delete("/api/planned/{item_id}/booking")
+    def delete_planned_booking(item_id: int, account_type: AccountType) -> dict[str, Any]:
+        return core.unbook_planned(database_path, account_type, item_id)
+
+    @app.post("/api/planned/{item_id}/dismissals")
+    def post_planned_dismissal(item_id: int, payload: PlannedBooking) -> dict[str, Any]:
+        return core.dismiss_match(database_path, payload.account_type, item_id, payload.transaction_id)
 
     @app.get("/api/reimbursements")
     def get_reimbursements() -> dict[str, Any]:

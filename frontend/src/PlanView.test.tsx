@@ -269,6 +269,30 @@ describe("PlanView consulting payments", () => {
 });
 
 describe("PlanView planned items", () => {
+  it("shows a suggested payment and confirms, dismisses and unbooks", async () => {
+    plannedItems = [
+      planned(5, { status: "overdue", suggestion: { transaction_id: 77, date: "2026-12-03", amount: "-4490.00", merchant: "Tax office", category: "Uncategorized" } }),
+      planned(6, { date: "2026-12-10", status: "booked", booked: { transaction_id: 78, date: "2026-12-09", amount: "-4500.00", merchant: "Tax office" } }),
+      planned(7, { date: "2027-01-10", status: "upcoming", suggestion: null }),
+    ];
+    const props = await renderView();
+    const table = within(screen.getByRole("table", { name: "Planned items", hidden: true }));
+    expect(table.getByText("overdue")).toBeTruthy();
+    expect(table.getByText("booked")).toBeTruthy();
+    expect(table.getByText(/Paid\? 2026-12-03/)).toBeTruthy();
+    fireEvent.click(table.getByRole("button", { name: "Confirm payment of planned item 2026-12-01" }));
+    await waitFor(() => expect(calls("PUT")).toHaveLength(1));
+    expect(calls("PUT")[0][0]).toBe("/api/planned/5/booking");
+    expect(calls("PUT")[0][1].json).toEqual({ account_type: "business", transaction_id: 77 });
+    await waitFor(() => expect(props.onChanged).toHaveBeenCalled());
+    fireEvent.click(table.getByRole("button", { name: "Not this transaction for planned item 2026-12-01" }));
+    await waitFor(() => expect(calls("POST")).toHaveLength(1));
+    expect(calls("POST")[0][0]).toBe("/api/planned/5/dismissals");
+    fireEvent.click(table.getByRole("button", { name: "Unbook planned item 2026-12-10" }));
+    await waitFor(() => expect(calls("DELETE")).toHaveLength(1));
+    expect(calls("DELETE")[0][0]).toBe("/api/planned/6/booking?account_type=business");
+  });
+
   it("adds an item and links it to another entity's", async () => {
     const props = await renderView();
     fireEvent.click(screen.getByRole("button", { name: "Add planned item" }));

@@ -147,6 +147,11 @@ CREATE TABLE IF NOT EXISTS planned_items (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS planned_match_dismissals (
+    planned_item_id INTEGER NOT NULL REFERENCES planned_items(id) ON DELETE CASCADE,
+    transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    PRIMARY KEY (planned_item_id, transaction_id)
+);
 CREATE TABLE IF NOT EXISTS reimbursement_claims (
     id INTEGER PRIMARY KEY,
     date TEXT NOT NULL,
@@ -275,9 +280,11 @@ ADDED_COLUMNS = {
     "salary_schedules": {
         "minimum_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(minimum_cents >= 0)",
     },
-    # Ties the three lines of a purchase paid by dividend together; NULL for every other planned item.
+    # Ties the three lines of a purchase paid by dividend together; NULL for every other planned item. The
+    # transaction that booked the item, set only when the owner confirms a match; NULL until then.
     "planned_items": {
         "dividend_group": "INTEGER",
+        "transaction_id": "INTEGER REFERENCES transactions(id) ON DELETE SET NULL",
     },
     # Days off that repeat every so many weeks (0: once), optionally until a date; existing rows happen once.
     "days_off": {

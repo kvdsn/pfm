@@ -190,7 +190,8 @@ class ApplyTests(TaxFixture):
             ("2026-12-20", "-26592.00", "Corporate tax prepayment (advised)"), ("2027-03-01", "-90.00", "Next year"),
         ])
         year = next(y for y in result["years"] if y["year"] == "2026")
-        self.assertEqual(year["planned_total"], "26592.00")
+        # The unbooked Past item (24 days ago) is kept and counts at today, so in the next deadline's slot.
+        self.assertEqual(year["planned_total"], "26642.00")
         self.assertEqual(year["surcharge_as_planned"], "0.00")
 
     def test_applying_next_years_advice_keeps_this_years_items(self):
