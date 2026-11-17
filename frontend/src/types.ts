@@ -443,6 +443,9 @@ export type ForecastSettings = {
   municipal_tax_rate?: number;
   professional_costs_rate?: number;
   reserve_early_rate?: number;
+  /** Interest on what the director lent the company, and the withholding on it, in percent. */
+  credit_interest_rate?: number;
+  interest_withholding_rate?: number;
   roles: Record<ForecastRole, number | null>;
   closed_categories: Record<AccountType, number[]>;
   yearly_categories: Record<AccountType, number[]>;
@@ -643,6 +646,8 @@ export type PayoutRoutes = {
   year?: string;
   corporate_rate?: number;
   wait_years?: number;
+  /** The interest rate the company pays on what the director lent it, in percent. */
+  credit_interest_rate?: number;
   routes: PayoutRoute[];
   existing_reserves?: { gross: string; earliest: string; latest: string } | null;
   threshold?: { salary: string; saving: string } | null;

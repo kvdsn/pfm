@@ -26,7 +26,7 @@ const settings: ForecastSettings = {
   tax_base_rate: 3, tax_surcharge_applies: true, tax_profit_excluded: [], loan_start: "2026-01-01", loan_interest_rate: 3.5, loan_interest_auto: false,
   forecast_end_year: 0, buffer_months: [{ year: 2026, months: 3 }], buffer_month_cost: "0.00", dividend_withholding_rate: 25,
   liquidation_reserves: [{ label: "Old", amount: "10000.00", payable: "2027-01-01", rate: 5 }], reserve_share: 0,
-  reserve_tax_rate: 10, reserve_wait_years: 3, reserve_payout_rate: 6.5,
+  reserve_tax_rate: 10, reserve_wait_years: 3, reserve_payout_rate: 6.5, credit_interest_rate: 6, interest_withholding_rate: 30,
   roles: {
     consulting_income: 41, vat: 43, corporate_tax: 42, salary_business: null, salary_personal: null,
     transfer_business: null, transfer_personal: null, loan_interest_business: null, loan_interest_personal: null,
@@ -81,12 +81,13 @@ let consulting: ConsultingCheck;
 let failure: string | null;
 let tax: CorporateTax;
 const payoutRoutes = {
-  year: "2027", corporate_rate: 25, wait_years: 3,
+  year: "2027", corporate_rate: 25, wait_years: 3, credit_interest_rate: 6,
   routes: [
     { key: "salary", profit_per_1000: "2500.00", tax_share: 60, net_per_euro: 0.4 },
     { key: "dividend", profit_per_1000: "1777.78", tax_share: 43.8, net_per_euro: 0.5625 },
     { key: "reserve", profit_per_1000: "1568.63", tax_share: 36.3, net_per_euro: 0.6375 },
     { key: "existing_reserves", profit_per_1000: "1500.00", tax_share: 33.3, net_per_euro: 0.66 },
+    { key: "current_account_interest", profit_per_1000: "1428.57", tax_share: 30, net_per_euro: 0.7 },
   ],
   existing_reserves: { gross: "10000.00", earliest: "2027-01-01", latest: "2029-01-01" },
   threshold: { salary: "51000.00", saving: "2500.00" },
@@ -197,7 +198,7 @@ describe("PlanView ways to take money out", () => {
     await renderView("business", "outlook");
     const table = section("Ways to take money out").getByRole("table");
     const rows = within(table).getAllByRole("row");
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
     expect(rows[1]).toHaveTextContent("Extra salary");
     expect(rows[1]).toHaveTextContent("€ 2.500,00");
     expect(rows[1]).toHaveTextContent("60.0%");
@@ -205,10 +206,15 @@ describe("PlanView ways to take money out", () => {
     expect(rows[3]).toHaveTextContent("after 3 years");
     expect(rows[4]).toHaveTextContent("from 2027 to 2029");
     expect(rows[4]).toHaveTextContent("€ 10.000,00 gross");
+    expect(rows[5]).toHaveTextContent("Interest on what you lent the company");
+    expect(rows[5]).toHaveTextContent("€ 1.428,57");
+    expect(rows[5]).toHaveTextContent("6% a year of what you lent; more counts as a dividend");
     expect(section("Ways to take money out").getByText(/saves € 2.500,00 a year/)).toBeInTheDocument();
     expect(section("Ways to take money out").getByText(/Social security contributions: 0%|Social security contributions/)).toBeInTheDocument();
     edit("Ways to take money out");
     expect(section("Ways to take money out").getByLabelText("Social security contributions (%)")).toBeInTheDocument();
+    expect(section("Ways to take money out").getByLabelText(/^Interest on what you lent the company \(%\)/)).toHaveValue("6");
+    expect(section("Ways to take money out").getByLabelText("Withholding on that interest (%)")).toHaveValue("30");
     cleanup();
     await renderView("personal", "outlook");
     expect(screen.queryByRole("region", { name: "Ways to take money out" })).not.toBeInTheDocument();
@@ -599,7 +605,7 @@ describe("PlanView money plan", () => {
     expect(calls("PUT")[0][1].json).toEqual({
       liquidation_reserves: [
         { label: "Old", amount: "12000", payable: "2027-01-01", rate: 5 },
-        { label: "New", amount: "500", payable: "2030-01-01", rate: 6.5 },
+        { label: "New", amount: "500", payable: "2030-01-01", rate: 9.8 },
       ],
       reserve_share: 50,
     });

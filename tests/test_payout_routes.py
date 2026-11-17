@@ -8,7 +8,7 @@ from tests.test_forecast import ForecastFixture
 MADE_UP = {
     "social_contribution_rate": 20, "personal_tax_rate": 50, "municipal_tax_rate": 0, "professional_costs_rate": 0,
     "dividend_withholding_rate": 25, "reserve_tax_rate": 10, "reserve_early_rate": 20, "reserve_payout_rate": 6.5,
-    "reserve_wait_years": 3, "loan_interest_rate": 4, "tax_reduced_rate": 20, "tax_standard_rate": 25,
+    "reserve_wait_years": 3, "loan_interest_rate": 4, "credit_interest_rate": 6, "interest_withholding_rate": 30, "tax_reduced_rate": 20, "tax_standard_rate": 25,
     "tax_reduced_threshold": 5100000, "tax_reduced_band": 10000000, "liquidation_reserves": [],
 }
 
@@ -29,6 +29,13 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(by_key["winding_up"]["profit_per_1000"], "1466.67")
         self.assertEqual(by_key["dividend"]["tax_share"], 43.8)
 
+    def test_current_account_interest_uses_only_the_withholding(self):
+        result, by_key = routes()
+        self.assertEqual(by_key["current_account_interest"]["profit_per_1000"], "1428.57")
+        self.assertEqual(by_key["current_account_interest"]["tax_share"], 30.0)
+        self.assertEqual(routes(eligible=True)[1]["current_account_interest"]["profit_per_1000"], "1428.57")
+        self.assertEqual(result["credit_interest_rate"], 6)
+
     def test_salary_with_municipal_tax_and_professional_costs(self):
         _, by_key = routes(municipal_tax_rate=10, professional_costs_rate=10)
         k = 1 - 0.2 - 0.8 * 0.9 * 0.5 * 1.1
@@ -42,7 +49,7 @@ class FormulaTests(unittest.TestCase):
     def test_ordering(self):
         result, _ = routes(liquidation_reserves=[{"label": "A", "amount": 100000, "payable": "2027-01-01", "rate": 5}])
         self.assertEqual([row["key"] for row in result["routes"]], [
-            "salary", "dividend", "reserve_early", "reserve", "existing_reserves", "loan_then_reserve", "winding_up",
+            "salary", "dividend", "current_account_interest", "reserve_early", "reserve", "existing_reserves", "loan_then_reserve", "winding_up",
         ])
 
     def test_corporate_rate_choice(self):
@@ -85,6 +92,11 @@ class EndpointTests(ForecastFixture):
         with core.connect(self.database) as db:
             self.assertEqual(load_settings(db)["social_contribution_rate"], 30)
         self.assertEqual(self.client.put("/api/forecast/settings", json={"reserve_early_rate": 120}).status_code, 400)
+        self.client.put("/api/forecast/settings", json={"credit_interest_rate": 5.5, "interest_withholding_rate": 25})
+        with core.connect(self.database) as db:
+            saved = load_settings(db)
+        self.assertEqual((saved["credit_interest_rate"], saved["interest_withholding_rate"]), (5.5, 25))
+        self.assertEqual(self.client.put("/api/forecast/settings", json={"credit_interest_rate": 25}).status_code, 400)
 
 
 if __name__ == "__main__":

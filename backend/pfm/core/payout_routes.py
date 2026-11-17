@@ -47,6 +47,8 @@ def compute_routes(settings: dict[str, Any], profit: int, eligible: bool) -> dic
     rows = [
         _row("salary", salary_k),
         _row("dividend", (1 - c) * (1 - withholding)),
+        # Interest on what the director lent the company is a cost, so it uses no corporate tax: only the withholding.
+        _row("current_account_interest", 1 - _rate(settings, "interest_withholding_rate")),
         _row("reserve_early", reserve_base * (1 - _rate(settings, "reserve_early_rate"))),
         _row("reserve", reserve_base * (1 - _rate(settings, "reserve_payout_rate"))),
     ]
@@ -71,6 +73,7 @@ def compute_routes(settings: dict[str, Any], profit: int, eligible: bool) -> dic
         }
     return {
         "corporate_rate": float(round(c * 100, 2)), "wait_years": wait, "routes": rows,
+        "credit_interest_rate": settings["credit_interest_rate"],
         "existing_reserves": existing, "threshold": threshold,
     }
 

@@ -54,13 +54,17 @@ DEFAULTS: dict[str, Any] = {
     "reserve_share": 0,
     "reserve_tax_rate": 10,
     "reserve_wait_years": 3,
-    "reserve_payout_rate": 6.5,
+    # Reserves formed for financial years ending on or after 31 December 2025 (programme law of 2026).
+    "reserve_payout_rate": 9.8,
     # The ways to take money out (percentages; the salary route is worked out from them).
     "social_contribution_rate": 20.5,
     "personal_tax_rate": 45,
     "municipal_tax_rate": 7,
     "professional_costs_rate": 3,
-    "reserve_early_rate": 20,
+    "reserve_early_rate": 30,
+    # Interest the company pays on what the director lent it: at most the yearly market rate, then withheld.
+    "credit_interest_rate": 6,
+    "interest_withholding_rate": 30,
 }
 MAX_BUFFER_MONTHS = 120
 MONEY_SETTINGS = (
@@ -80,6 +84,8 @@ PERCENT_SETTINGS = {
     "municipal_tax_rate": ("Municipal tax rate", 0, 100),
     "professional_costs_rate": ("Professional costs rate", 0, 100),
     "reserve_early_rate": ("Early reserve payout rate", 0, 100),
+    "credit_interest_rate": ("Current account interest rate", 0, 20),
+    "interest_withholding_rate": ("Interest withholding rate", 0, 99),
 }
 WHOLE_RANGES = {
     "payment_delay_months": (0, 6),

@@ -189,6 +189,8 @@ class ForecastSettingsUpdate(BaseModel):
     municipal_tax_rate: Optional[float] = None
     professional_costs_rate: Optional[float] = None
     reserve_early_rate: Optional[float] = None
+    credit_interest_rate: Optional[float] = None
+    interest_withholding_rate: Optional[float] = None
     closed_categories: Optional[dict[AccountType, list[int]]] = None
     yearly_categories: Optional[dict[AccountType, list[int]]] = None
     roles: Optional[dict[str, Optional[int]]] = None  # a null category clears the role

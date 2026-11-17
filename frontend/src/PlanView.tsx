@@ -65,6 +65,11 @@ function payoutText(route: PayoutRoute, payout: PayoutRoutes): { label: string; 
   switch (route.key) {
     case "salary": return { label: "Extra salary", when: "right away", limit: "" };
     case "dividend": return { label: "Dividend", when: "after the year's accounts", limit: "" };
+    case "current_account_interest":
+      return {
+        label: "Interest on what you lent the company", when: "each year",
+        limit: `${payout.credit_interest_rate ?? 0}% a year of what you lent; more counts as a dividend`,
+      };
     case "reserve_early": return { label: "Reserve, paid out early", when: "any time", limit: "" };
     case "reserve": return { label: "New reserve", when: `after ${years} ${years === 1 ? "year" : "years"}`, limit: "" };
     case "existing_reserves":
@@ -278,7 +283,7 @@ function SettingsForm({
                   </div>
                 ))}
                 <div>
-                  <button type="button" className="button secondary" onClick={() => set("reserves", [...rows, { label: "", amount: "", payable: "", rate: "6.5" }])}>Add reserve</button>
+                  <button type="button" className="button secondary" onClick={() => set("reserves", [...rows, { label: "", amount: "", payable: "", rate: "9.8" }])}>Add reserve</button>
                 </div>
               </div>
             </fieldset>
@@ -858,6 +863,8 @@ export function PlanView({
     { kind: "number", key: "municipal_tax_rate", label: "Municipal tax (%)", help: "A surcharge on the income tax" },
     { kind: "number", key: "professional_costs_rate", label: "Flat professional costs (%)" },
     { kind: "number", key: "reserve_early_rate", label: "Reserve paid out early (%)" },
+    { kind: "number", key: "credit_interest_rate", label: "Interest on what you lent the company (%)", help: "At most the market rate for the year" },
+    { kind: "number", key: "interest_withholding_rate", label: "Withholding on that interest (%)" },
   ], []);
   const baselineFields: Field[] = useMemo(() => [
     { kind: "select", key: "forecast_end_year", label: "Forecast to", options: endYearOptions },
