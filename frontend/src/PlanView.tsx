@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_TYPE_LABELS,
@@ -164,13 +164,14 @@ function changesOf(fields: Field[], draft: Draft, initial: Draft, accountType: A
 }
 
 function SettingsForm({
-  fields, initial, categories, accountType, onSave, children,
+  fields, initial, categories, accountType, onSave, onCancel, children,
 }: {
   fields: Field[];
   initial: Draft;
   categories: Category[];
   accountType: AccountType;
   onSave: (changes: Record<string, unknown>) => Promise<void>;
+  onCancel?: () => void;
   children?: React.ReactNode;
 }) {
   const [draft, setDraft] = useState<Draft>(initial);
@@ -325,15 +326,48 @@ function SettingsForm({
       {error && <p className="recurring-error" role="alert">{error}</p>}
       <div className="plan-actions">
         <button type="submit" className="button primary" disabled={busy || Object.keys(changes).length === 0}>Save</button>
+        {onCancel && <button type="button" className="button secondary" onClick={onCancel}>Cancel</button>}
       </div>
     </form>
   );
 }
 
-/** A section of settings with its own Save button; it starts over from the saved values when they change. */
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** One saved value of a field as a short text for the closed summary. */
+function summaryPart(field: Field, settings: ForecastSettings, accountType: AccountType): string {
+  switch (field.kind) {
+    case "buffer": return plural(settings.buffer_months.length, "buffer target");
+    case "reserves": return plural((settings.liquidation_reserves ?? []).length, "reserve");
+    case "closed": return plural(settings.closed_categories[accountType].length, "closed category").replace(/ys$/, "ies");
+    case "yearly": return plural((settings.yearly_categories?.[accountType] ?? []).length, "yearly category").replace(/ys$/, "ies");
+    case "excluded": return `${settings.tax_profit_excluded.length} categories left out of the profit`;
+    case "roles": return `${field.roles.filter((role) => settings.roles[role] !== null).length} of ${field.roles.length} categories set`;
+    case "checkbox": return `${field.label.split(":")[0]}: ${settings[field.key] ? "yes" : "no"}`;
+    case "select": {
+      const value = Number(settings[field.key]);
+      return `${field.label}: ${field.options.find(([option]) => option === value)?.[1] ?? value}`;
+    }
+    default: {
+      const raw = String(settings[field.key]);
+      // A share of 0 is worked out from history.
+      if (field.key === "salary_net_percent" && Number(raw) === 0) return `${field.label.replace(/\s*\([^)]*\)\s*$/, "")}: from history`;
+      const unit = /\((%|months|days|years)\)\s*$/.exec(field.label)?.[1];
+      const label = field.label.replace(/\s*\([^)]*\)\s*$/, "");
+      const value = unit === "%" ? `${raw}%`
+        : unit ? plural(Number(raw), unit.slice(0, -1))
+        : /^-?\d+\.\d{2}$/.test(raw) ? money(raw) : raw;
+      return `${label}: ${value}`;
+    }
+  }
+}
+
+/** A section of settings: a one-line summary of the saved values and an Edit button that opens the form with its own Save. */
 function SettingsSection({
-  fields, settings, categories, accountType, onSave, children,
+  label, fields, settings, categories, accountType, onSave, children,
 }: {
+  /** What the section's Edit button names. */
+  label: string;
   fields: Field[];
   settings: ForecastSettings;
   categories: Category[];
@@ -341,7 +375,16 @@ function SettingsSection({
   onSave: (changes: Record<string, unknown>) => Promise<void>;
   children?: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   const initial = useMemo(() => initialDraft(fields, settings, accountType), [fields, settings, accountType]);
+  if (!open) {
+    return (
+      <div className="plan-settings-summary">
+        <p className="plan-line">{fields.map((field) => summaryPart(field, settings, accountType)).join(" · ")}</p>
+        <button type="button" className="button secondary" aria-label={`Edit ${label} settings`} onClick={() => setOpen(true)}>Edit</button>
+      </div>
+    );
+  }
   return (
     <SettingsForm
       key={JSON.stringify(initial)}
@@ -349,7 +392,11 @@ function SettingsSection({
       initial={initial}
       categories={categories}
       accountType={accountType}
-      onSave={onSave}
+      onSave={async (changes) => {
+        await onSave(changes);
+        setOpen(false);
+      }}
+      onCancel={() => setOpen(false)}
     >
       {children}
     </SettingsForm>
@@ -485,8 +532,6 @@ const VAT_TAGS = {
   paid: { label: "VAT paid", tone: "" }, differs: { label: "VAT differs", tone: "tag-amber" },
   missing: { label: "VAT missing", tone: "tag-red" }, due: { label: "VAT due", tone: "" },
 };
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-
 function paymentTip(row: ConsultingMonth): string {
   if (row.status === "due") return `Expected ${money(row.expected)} by ${row.due}`;
   if (row.status === "late") return `Nothing received; ${money(row.expected)} was due ${row.due} (or not imported yet)`;
@@ -534,7 +579,6 @@ function ConsultingPayments({ check }: { check: ConsultingCheck }) {
   const tag = (label: string, tone: string, tip: string) => <span className={`pay-tag ${tone}`} title={tip}>{label}</span>;
   return (
     <>
-      <h5 className="plan-subheading">Payments</h5>
       <p className="plan-line">{parts.length ? parts.join(", ") : "All payments as expected"}</p>
       {check.months.length > 0 && (
         <div className="table-scroll">
@@ -568,6 +612,12 @@ function ConsultingPayments({ check }: { check: ConsultingCheck }) {
   );
 }
 
+export type ForecastTab = "outlook" | "check" | "inputs";
+export const FORECAST_TABS: ForecastTab[] = ["outlook", "check", "inputs"];
+const TAB_LABELS: [ForecastTab, string][] = [["outlook", "Outlook"], ["check", "Check"], ["inputs", "Inputs"]];
+/** A balance older than this many days is flagged. */
+const STALE_BALANCE_DAYS = 31;
+
 export function PlanView({
   accountType,
   categories,
@@ -580,7 +630,15 @@ export function PlanView({
   onClose,
   newItemSignal = 0,
   recurring,
+  tab = "outlook",
+  onTabChange = () => {},
+  recurringCandidates = 0,
 }: {
+  /** The tab in view; App remembers it. */
+  tab?: ForecastTab;
+  onTabChange?: (tab: ForecastTab) => void;
+  /** Suggested recurring payments waiting for a decision, reported by the recurring list. */
+  recurringCandidates?: number;
   accountType: AccountType;
   categories: Category[];
   /** The entity's forecast, which App reloads after every change made here. */
@@ -613,7 +671,6 @@ export function PlanView({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [showRoles, setShowRoles] = useState(false);
   const [newRate, setNewRate] = useState({ date: "", rate: "" });
   const [newOff, setNewOff] = useState({ start: "", end: "", half: false, note: "", repeat: 0, until: "" });
 
@@ -830,15 +887,111 @@ export function PlanView({
   const backtest = forecast?.backtest;
   const warnings = consultingWarnings(consulting);
 
+  // The summary strip and what needs attention.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [scrollTarget, setScrollTarget] = useState<{ selector: string } | null>(null);
+  /** Opens a tab and brings one of its panels into view once the tab shows. */
+  const goTo = (next: ForecastTab, selector: string) => {
+    onTabChange(next);
+    setScrollTarget({ selector });
+  };
+  useEffect(() => {
+    if (!scrollTarget) return;
+    rootRef.current?.querySelector(scrollTarget.selector)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    setScrollTarget(null);
+  }, [scrollTarget, tab]);
+
+  const thisYear = (forecast?.today ?? "").slice(0, 4);
+  const endOfYear = forecast ? forecast.year_ends.find((end) => end.year === thisYear) ?? forecast.year_ends[0] : undefined;
+  const lowest = useMemo(() => {
+    let found: { month: string; closing: string } | null = null;
+    for (const month of forecast?.months ?? []) {
+      const value = Number(month.closing);
+      if (month.closing !== undefined && Number.isFinite(value) && (!found || value < Number(found.closing))) found = month;
+    }
+    return found;
+  }, [forecast]);
+  const room = isBusiness ? forecast?.money_plan?.find((row) => row.year === thisYear) : undefined;
+  const staleAccounts = forecast
+    ? forecast.accounts.filter((account) => Date.parse(forecast.today) - Date.parse(account.as_of) > STALE_BALANCE_DAYS * 86_400_000)
+    : [];
+  const consultingIssues = consulting ? consulting.summary.late + consulting.summary.differs + consulting.summary.vat_missing : 0;
+  const attention: { key: string; tab: ForecastTab; selector: string; text: string; count: number }[] = [
+    ...(shortMonths.length ? [{ key: "short", tab: "outlook" as const, selector: 'section[aria-label="Outlook"]', count: shortMonths.length, text: `${plural(shortMonths.length, "month")} with a transfer short` }] : []),
+    ...(staleAccounts.length ? [{ key: "stale", tab: "outlook" as const, selector: 'section[aria-label="Outlook"]', count: staleAccounts.length, text: `${plural(staleAccounts.length, "balance")} more than ${STALE_BALANCE_DAYS} days old` }] : []),
+    ...(consultingIssues ? [{ key: "consulting", tab: "check" as const, selector: 'section[aria-label="Consulting payments"]', count: consultingIssues, text: `${plural(consultingIssues, "consulting payment")} late, differing or without VAT` }] : []),
+    ...(recurringCandidates ? [{ key: "recurring", tab: "inputs" as const, selector: "#section-recurring", count: recurringCandidates, text: `${plural(recurringCandidates, "suggested recurring payment")} to decide` }] : []),
+  ];
+  const attentionTotal = attention.reduce((sum, item) => sum + item.count, 0);
+  const badge: Record<ForecastTab, number> = { outlook: 0, check: 0, inputs: 0 };
+  for (const item of attention) badge[item.tab] += item.count;
+
   return (
-    <div className="plan-view">
-      <section className="panel plan-panel" aria-label="Outlook">
+    <div className="plan-view" ref={rootRef}>
+      <section className="panel plan-panel" aria-label="Forecast summary">
         <div className="section-heading">
           <div><h3>Forecast</h3><div className="muted small">What the forecast assumes, for {ACCOUNT_TYPE_LABELS[accountType]}</div></div>
           <div className="transaction-filters">
             <button className="icon-button" aria-label="Close forecast" onClick={onClose}>×</button>
           </div>
         </div>
+        {forecast && (
+          <div className="plan-summary">
+            {endOfYear && (
+              <button className="plan-tile" onClick={() => goTo("outlook", 'section[aria-label="Outlook"]')}>
+                <span className="plan-tile-label">End of {endOfYear.year}</span>
+                <span className="plan-tile-value">{money(endOfYear.closing)}</span>
+                <span className="plan-tile-note">range {money(endOfYear.low)} – {money(endOfYear.high)}</span>
+              </button>
+            )}
+            {lowest && (
+              <button className="plan-tile" onClick={() => goTo("outlook", 'section[aria-label="Outlook"]')}>
+                <span className="plan-tile-label">Lowest point</span>
+                <span className="plan-tile-value">{money(lowest.closing)}</span>
+                <span className="plan-tile-note">{monthLabel(lowest.month)}</span>
+              </button>
+            )}
+            {room && room.room !== null && (
+              <button className="plan-tile" onClick={() => goTo("outlook", 'section[aria-label="Money plan"]')}>
+                <span className="plan-tile-label">Room above the buffer</span>
+                <span className={`plan-tile-value ${signClass(room.room)}`}>{money(room.room)}</span>
+                <span className="plan-tile-note">At the end of {room.year}</span>
+              </button>
+            )}
+            <div className="plan-tile plan-attention" aria-label="Needs attention">
+              <span className="plan-tile-label">Needs attention</span>
+              <span className="plan-tile-value">{attentionTotal}</span>
+              {attention.length === 0 ? <span className="plan-tile-note">Nothing</span> : (
+                <ul className="plan-attention-list">
+                  {attention.map((item) => (
+                    <li key={item.key}><button className="vs-hint-link" onClick={() => goTo(item.tab, item.selector)}>{item.text}</button></li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div className="account-tabs plan-tabs" role="tablist" aria-label="Forecast parts">
+        {TAB_LABELS.map(([key, text]) => (
+          <button
+            key={key}
+            role="tab"
+            id={`plan-tab-${key}`}
+            aria-selected={tab === key}
+            aria-controls={`plan-panel-${key}`}
+            className={tab === key ? "account-tab active" : "account-tab"}
+            onClick={() => onTabChange(key)}
+          >
+            {text}
+            {badge[key] > 0 && <span className="count">{badge[key]}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" id="plan-panel-outlook" aria-labelledby="plan-tab-outlook" hidden={tab !== "outlook"} className={isBusiness ? "plan-tab plan-outlook" : "plan-tab plan-outlook plan-outlook-solo"}>
+      <section className="panel plan-panel" aria-label="Outlook">
         <h4 className="plan-heading">Outlook</h4>
         {forecast ? (
           <>
@@ -862,94 +1015,181 @@ export function PlanView({
             <h5 className="plan-subheading">Assumptions</h5>
             {forecast.assumptions.length ? (
               <ul className="plan-list">{forecast.assumptions.map((text) => <li key={text}>{text}</li>)}</ul>
-            ) : <p className="muted small">None beyond the settings below.</p>}
+            ) : <p className="muted small">None beyond the settings.</p>}
           </>
         ) : <p className="muted small">The forecast is not available.</p>}
       </section>
 
-      {isBusiness && settings && (
-        <section className="panel plan-panel" aria-label="Money plan">
-          <h4 className="plan-heading">Money plan</h4>
-          <p className="muted small">What Business keeps above its buffer target at the end of each year, and what that is worth as a dividend. Up to the liquidation reserve, the room is worth its payout (net of the reserves' withholding) rather than a dividend.</p>
-          {forecast?.money_plan && forecast.money_plan.length > 0 ? (
+      {isBusiness && (
+        <div className="plan-stack">
+        {settings && (
+          <section className="panel plan-panel" aria-label="Money plan">
+            <h4 className="plan-heading">Money plan</h4>
+            <p className="muted small">What Business keeps above its buffer target at the end of each year, and what that is worth as a dividend. Up to the liquidation reserve, the room is worth its payout (net of the reserves' withholding) rather than a dividend.</p>
+            {forecast?.money_plan && forecast.money_plan.length > 0 ? (
+              <div className="table-scroll">
+                <table className="rules-table plan-table money-plan-table" aria-label="Money plan">
+                  <thead>
+                    <tr>
+                      <th>Year</th><th className="numeric">Year end</th><th className="numeric">Target</th>
+                      <th className="numeric">Room</th><th className="numeric">Room, net</th><th className="numeric">New, net</th>
+                      <th className="numeric">Reserve</th><th className="numeric">Director loan</th>
+                      <th className="numeric">Lowest</th><th className="numeric">Dividends, net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {forecast.money_plan.map((row: MoneyPlanRow) => (
+                      <tr key={row.year}>
+                        <td className="nowrap">{row.year}</td>
+                        <td className="numeric">{money(row.closing)}</td>
+                        <td className="numeric">
+                          {row.target === null ? "—" : money(row.target)}
+                          {row.target !== null && <div className="muted small">{row.target_months} months of {money(row.month_cost)}, {row.month_cost_derived ? "derived" : "fixed"}</div>}
+                          {row.target === null && <div className="muted small">month of costs {money(row.month_cost)}, {row.month_cost_derived ? "derived" : "fixed"}</div>}
+                        </td>
+                        <td className={`numeric ${row.room === null ? "" : signClass(row.room)}`}>{row.room === null ? "—" : money(row.room)}</td>
+                        <td className={`numeric ${row.room_net === null ? "" : signClass(row.room_net)}`}>{row.room_net === null ? "—" : money(row.room_net)}</td>
+                        <td className={`numeric ${row.new_net === null ? "" : signClass(row.new_net)}`}>{row.new_net === null ? "—" : money(row.new_net)}</td>
+                        <td className="numeric">{money(row.reserve ?? "0.00")}</td>
+                        <td className="numeric">{money(row.loan ?? "0.00")}</td>
+                        <td className="numeric">
+                          {money(row.lowest)}
+                          <div className="muted small">{monthLabel(row.lowest_month)}{row.lowest_months === null ? "" : ` · ${row.lowest_months} months`}</div>
+                        </td>
+                        <td className="numeric">{money(row.dividends_net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="muted small">The money plan is not available.</p>}
+            <SettingsSection label="Money plan" fields={moneyPlanFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+          </section>
+        )}
+
+        {settings && (
+          <section className="panel plan-panel" aria-label="Ways to take money out">
+            <h4 className="plan-heading">Ways to take money out</h4>
+            <p className="muted small">Per €1,000 net in your pocket: the company profit before corporate tax each route uses. An estimate from the settings; check it with your accountant.</p>
+            {payout && payout.routes.length > 0 ? (
+              <div className="table-scroll">
+                <table className="rules-table plan-table payout-table" aria-label="Ways to take money out">
+                  <thead>
+                    <tr><th>Route</th><th className="numeric">Company profit</th><th className="numeric">Total tax</th><th>When</th><th>Limit</th></tr>
+                  </thead>
+                  <tbody>
+                    {payout.routes.map((route) => {
+                      const text = payoutText(route, payout);
+                      return (
+                        <tr key={route.key}>
+                          <td>{text.label}</td>
+                          <td className="numeric">{money(route.profit_per_1000)}</td>
+                          <td className="numeric">{route.tax_share.toFixed(1)}%</td>
+                          <td>{text.when}</td>
+                          <td>{text.limit}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="muted small">The routes are not available.</p>}
+            {payout?.threshold && (
+              <p className="muted small payout-note">
+                Salary up to {money(payout.threshold.salary)} a year keeps the reduced corporate rate, which saves {money(payout.threshold.saving)} a year in corporate tax, so that salary pays for itself.
+              </p>
+            )}
+            <SettingsSection label="Ways to take money out" fields={payoutFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+          </section>
+        )}
+        </div>
+      )}
+
+      <div className="plan-stack plan-outlook-wide">
+        {isBusiness && settings && (
+          <CorporateTaxSection
+            tax={tax}
+            settings={settings}
+            planned={planned}
+            today={forecast?.today ?? new Date().toLocaleDateString("sv")}
+            onChanged={async () => { await load(); onChanged(); }}
+            onNotice={onNotice}
+            rules={(
+              <SettingsSection label="Corporate tax"
+                fields={taxFields}
+                settings={settings}
+                categories={categories.filter((category) => category.id !== settings.roles.vat
+                  && category.id !== settings.roles.corporate_tax && category.id !== settings.roles.transfer_business)}
+                accountType={accountType}
+                onSave={saveSettings}
+              />
+            )}
+          />
+        )}
+
+        {hasSalary && settings && (
+          <DirectorLoanSection
+            loan={loan}
+            onLoan={setLoan}
+            onChanged={onChanged}
+            onNotice={onNotice}
+            rules={(
+              <SettingsSection label="Director loan" fields={loanFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+            )}
+          />
+        )}
+      </div>
+      </div>
+
+      <div role="tabpanel" id="plan-panel-check" aria-labelledby="plan-tab-check" hidden={tab !== "check"} className="plan-tab">
+      {vsActual && accountType !== "kids" && <ForecastVsReality vsActual={vsActual} onOpenRecurring={onOpenRecurring} onOpenSettings={() => goTo("inputs", 'section[aria-label="Baselines"]')} />}
+
+      {isBusiness && consulting && (
+        <section className="panel plan-panel" aria-label="Consulting payments">
+          <h4 className="plan-heading">Consulting payments</h4>
+          <ConsultingPayments check={consulting} />
+        </section>
+      )}
+
+      {forecast && (
+        <section className="panel plan-panel" aria-label="Backtest and one-offs">
+          <h4 className="plan-heading">Backtest and one-offs</h4>
+          {backtest && (
+            <p className="plan-line" aria-label="Backtest">
+              <span className="muted">Backtest: </span>
+              {backtest.origins === 0 ? "not enough history yet" : (
+                <>
+                  {backtest.origins} origins; recommended {backtest.recommended.baseline_months} months
+                  {backtest.recommended.baseline_weighted ? ", weighted" : ", not weighted"}
+                  {backtest.horizons.length > 0 && "; p10 to p90 "}
+                  {backtest.horizons.map((horizon) => `${horizon.months} mo ${tipMoney(Number(horizon.p10))} to ${tipMoney(Number(horizon.p90))}`).join(", ")}
+                </>
+              )}
+            </p>
+          )}
+          <h5 className="plan-subheading">One-offs left out of the baseline</h5>
+          {forecast && forecast.one_offs.length > 0 ? (
             <div className="table-scroll">
-              <table className="rules-table plan-table money-plan-table" aria-label="Money plan">
-                <thead>
-                  <tr>
-                    <th>Year</th><th className="numeric">Year end</th><th className="numeric">Target</th>
-                    <th className="numeric">Room</th><th className="numeric">Room, net</th><th className="numeric">New, net</th>
-                    <th className="numeric">Reserve</th><th className="numeric">Director loan</th>
-                    <th className="numeric">Lowest</th><th className="numeric">Dividends, net</th>
-                  </tr>
-                </thead>
+              <table className="rules-table plan-table" aria-label="One-offs">
+                <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th className="numeric">Amount</th></tr></thead>
                 <tbody>
-                  {forecast.money_plan.map((row: MoneyPlanRow) => (
-                    <tr key={row.year}>
-                      <td className="nowrap">{row.year}</td>
-                      <td className="numeric">{money(row.closing)}</td>
-                      <td className="numeric">
-                        {row.target === null ? "—" : money(row.target)}
-                        {row.target !== null && <div className="muted small">{row.target_months} months of {money(row.month_cost)}, {row.month_cost_derived ? "derived" : "fixed"}</div>}
-                        {row.target === null && <div className="muted small">month of costs {money(row.month_cost)}, {row.month_cost_derived ? "derived" : "fixed"}</div>}
-                      </td>
-                      <td className={`numeric ${row.room === null ? "" : signClass(row.room)}`}>{row.room === null ? "—" : money(row.room)}</td>
-                      <td className={`numeric ${row.room_net === null ? "" : signClass(row.room_net)}`}>{row.room_net === null ? "—" : money(row.room_net)}</td>
-                      <td className={`numeric ${row.new_net === null ? "" : signClass(row.new_net)}`}>{row.new_net === null ? "—" : money(row.new_net)}</td>
-                      <td className="numeric">{money(row.reserve ?? "0.00")}</td>
-                      <td className="numeric">{money(row.loan ?? "0.00")}</td>
-                      <td className="numeric">
-                        {money(row.lowest)}
-                        <div className="muted small">{monthLabel(row.lowest_month)}{row.lowest_months === null ? "" : ` · ${row.lowest_months} months`}</div>
-                      </td>
-                      <td className="numeric">{money(row.dividends_net)}</td>
+                  {forecast.one_offs.map((item) => (
+                    <tr key={item.transaction_id}>
+                      <td className="nowrap">{item.date}</td>
+                      <td className="truncate-cell" title={item.merchant}>{item.merchant}</td>
+                      <td className="truncate-cell">{item.category}</td>
+                      <td className={`numeric ${signClass(item.amount)}`}>{money(item.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          ) : <p className="muted small">The money plan is not available.</p>}
-          <SettingsSection fields={moneyPlanFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+          ) : <p className="muted small">No one-offs in the baseline's history.</p>}
         </section>
       )}
+      </div>
 
-      {isBusiness && settings && (
-        <section className="panel plan-panel" aria-label="Ways to take money out">
-          <h4 className="plan-heading">Ways to take money out</h4>
-          <p className="muted small">Per €1,000 net in your pocket: the company profit before corporate tax each route uses. An estimate from the settings; check it with your accountant.</p>
-          {payout && payout.routes.length > 0 ? (
-            <div className="table-scroll">
-              <table className="rules-table plan-table payout-table" aria-label="Ways to take money out">
-                <thead>
-                  <tr><th>Route</th><th className="numeric">Company profit</th><th className="numeric">Total tax</th><th>When</th><th>Limit</th></tr>
-                </thead>
-                <tbody>
-                  {payout.routes.map((route) => {
-                    const text = payoutText(route, payout);
-                    return (
-                      <tr key={route.key}>
-                        <td>{text.label}</td>
-                        <td className="numeric">{money(route.profit_per_1000)}</td>
-                        <td className="numeric">{route.tax_share.toFixed(1)}%</td>
-                        <td>{text.when}</td>
-                        <td>{text.limit}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="muted small">The routes are not available.</p>}
-          {payout?.threshold && (
-            <p className="muted small payout-note">
-              Salary up to {money(payout.threshold.salary)} a year keeps the reduced corporate rate, which saves {money(payout.threshold.saving)} a year in corporate tax, so that salary pays for itself.
-            </p>
-          )}
-          <SettingsSection fields={payoutFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
-        </section>
-      )}
-
-      {vsActual && accountType !== "kids" && <ForecastVsReality vsActual={vsActual} onOpenRecurring={onOpenRecurring} />}
-
+      <div role="tabpanel" id="plan-panel-inputs" aria-labelledby="plan-tab-inputs" hidden={tab !== "inputs"} className="plan-tab">
       {recurring}
 
       <section className="panel plan-panel" aria-label="Planned items">
@@ -1025,39 +1265,6 @@ export function PlanView({
         <ReimbursementsSection accountType={accountType} categories={categories} onChanged={onChanged} onNotice={onNotice} />
       )}
 
-      {isBusiness && settings && (
-        <CorporateTaxSection
-          tax={tax}
-          settings={settings}
-          planned={planned}
-          today={forecast?.today ?? new Date().toLocaleDateString("sv")}
-          onChanged={async () => { await load(); onChanged(); }}
-          onNotice={onNotice}
-          rules={(
-            <SettingsSection
-              fields={taxFields}
-              settings={settings}
-              categories={categories.filter((category) => category.id !== settings.roles.vat
-                && category.id !== settings.roles.corporate_tax && category.id !== settings.roles.transfer_business)}
-              accountType={accountType}
-              onSave={saveSettings}
-            />
-          )}
-        />
-      )}
-
-      {hasSalary && settings && (
-        <DirectorLoanSection
-          loan={loan}
-          onLoan={setLoan}
-          onChanged={onChanged}
-          onNotice={onNotice}
-          rules={(
-            <SettingsSection fields={loanFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
-          )}
-        />
-      )}
-
       {/* The settings sections flow in columns, so a short one does not leave a gap beside a tall one. */}
       <div className="plan-columns">
       {hasSalary && settings && (
@@ -1082,7 +1289,7 @@ export function PlanView({
             </table>
           </div>
           {errors.salary && <p className="recurring-error" role="alert">{errors.salary}</p>}
-          <SettingsSection fields={salaryFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings}>
+          <SettingsSection label="Salary" fields={salaryFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings}>
             <p className="muted small">
               0 takes the share from the last 12 months of history
               {derivedShare ? <>; currently <strong>{derivedShare}%</strong></> : null}.
@@ -1094,7 +1301,6 @@ export function PlanView({
       {isBusiness && settings && (
         <section className="panel plan-panel" aria-label="Consulting">
           <h4 className="plan-heading">Consulting</h4>
-          {consulting && <ConsultingPayments check={consulting} />}
           <h5 className="plan-subheading">Day rates</h5>
           <div className="table-scroll">
             <table className="rules-table plan-table" aria-label="Day rates">
@@ -1155,14 +1361,14 @@ export function PlanView({
           </div>
           {errors.daysOff && <p className="recurring-error" role="alert">{errors.daysOff}</p>}
           <h5 className="plan-subheading">Invoicing and VAT</h5>
-          <SettingsSection fields={consultingFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+          <SettingsSection label="Consulting" fields={consultingFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
         </section>
       )}
 
       {hasSalary && settings && (
         <section className="panel plan-panel" aria-label="Balances">
           <h4 className="plan-heading">Balances</h4>
-          <SettingsSection fields={balanceFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+          <SettingsSection label="Balances" fields={balanceFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
         </section>
       )}
 
@@ -1171,59 +1377,23 @@ export function PlanView({
           <h4 className="plan-heading">Baselines</h4>
           <p className="muted small">Everything else is projected from a typical month of each category.</p>
           {/* The models' own categories never get a baseline, so closing them would change nothing. */}
-          <SettingsSection
+          <SettingsSection label="Baselines"
             fields={baselineFields}
             settings={settings}
             categories={categories.filter((category) => !Object.values(settings.roles).includes(category.id))}
             accountType={accountType}
             onSave={saveSettings}
           />
-          {backtest && (
-            <p className="plan-line" aria-label="Backtest">
-              <span className="muted">Backtest: </span>
-              {backtest.origins === 0 ? "not enough history yet" : (
-                <>
-                  {backtest.origins} origins; recommended {backtest.recommended.baseline_months} months
-                  {backtest.recommended.baseline_weighted ? ", weighted" : ", not weighted"}
-                  {backtest.horizons.length > 0 && "; p10 to p90 "}
-                  {backtest.horizons.map((horizon) => `${horizon.months} mo ${tipMoney(Number(horizon.p10))} to ${tipMoney(Number(horizon.p90))}`).join(", ")}
-                </>
-              )}
-            </p>
-          )}
-          <h5 className="plan-subheading">One-offs left out of the baseline</h5>
-          {forecast && forecast.one_offs.length > 0 ? (
-            <div className="table-scroll">
-              <table className="rules-table plan-table" aria-label="One-offs">
-                <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th className="numeric">Amount</th></tr></thead>
-                <tbody>
-                  {forecast.one_offs.map((item) => (
-                    <tr key={item.transaction_id}>
-                      <td className="nowrap">{item.date}</td>
-                      <td className="truncate-cell" title={item.merchant}>{item.merchant}</td>
-                      <td className="truncate-cell">{item.category}</td>
-                      <td className={`numeric ${signClass(item.amount)}`}>{money(item.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="muted small">No one-offs in the baseline's history.</p>}
         </section>
       )}
 
       {settings && roles.length > 0 && (
         <section className="panel plan-panel" aria-label="Categories used by the models">
-          <h4 className="plan-heading">
-            <button className="recurring-toggle" aria-expanded={showRoles} onClick={() => setShowRoles((shown) => !shown)}>
-              {showRoles ? "Hide" : "Show"} categories used by the models
-            </button>
-          </h4>
-          {showRoles && (
-            <SettingsSection fields={roleFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
-          )}
+          <h4 className="plan-heading">Categories used by the models</h4>
+          <SettingsSection label="model categories" fields={roleFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
         </section>
       )}
+      </div>
       </div>
     </div>
   );

@@ -361,6 +361,10 @@ await page.keyboard.press("Escape");
       [...document.querySelectorAll(".topbar-actions button")].find((button) => button.textContent.trim() === "Forecast").click();
     });
     await page.waitForSelector(".recurring-summary", { timeout: 10000 }).catch(() => null);
+    // Recurring payments are on the Inputs tab.
+    await page.evaluate(() => document.getElementById("plan-tab-inputs")?.click());
+    await page.evaluate(() => document.getElementById("section-recurring")?.scrollIntoView());
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const row = await page.$(".recurring-table tbody tr");
     if (row) await row.click();
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -391,36 +395,40 @@ await page.keyboard.press("Escape");
   await page.setViewport({ width: 850, height: 1000 });
 }
 
-// Plan: stacked panels with compact tables. The live server may predate /api/forecast; the check is skipped then,
+// Plan: each tab (Outlook, Check, Inputs) with compact tables. The live server may predate /api/forecast; the check is skipped then,
 // because the view cannot load. It only reads: nothing is added, changed or deleted.
 {
-  const openPlan = async () => {
+  const openPlan = async (tab) => {
     await page.evaluate(() => {
       [...document.querySelectorAll(".topbar-actions button")].find((button) => button.textContent.trim() === "Forecast").click();
     });
     await page.waitForSelector('.plan-view [aria-label="Baselines"]', { timeout: 10000 }).catch(() => null);
+    await page.evaluate((key) => document.getElementById(`plan-tab-${key}`)?.click(), tab);
     await new Promise((resolve) => setTimeout(resolve, 400));
     return page.evaluate(() => ({
       loaded: Boolean(document.querySelector('.plan-view [aria-label="Baselines"]')),
-      panels: document.querySelectorAll(".plan-view .plan-panel").length,
+      panels: [...document.querySelectorAll(".plan-view .plan-panel")].filter((panel) => panel.offsetParent !== null).length,
       tablesFit: [...document.querySelectorAll(".plan-view .table-scroll")].every((scroller) => scroller.scrollWidth <= scroller.clientWidth + 1),
       panelsFit: [...document.querySelectorAll(".plan-view .plan-panel")].every((panel) => panel.scrollWidth <= panel.clientWidth + 1),
       overviewHidden: !document.querySelector(".year-overview"),
       docWidth: document.documentElement.scrollWidth,
     }));
   };
-  for (const [width, shot] of [[1728, "11-plan"], [1024, "11-plan-1024"], [850, "11-plan-850"]]) {
-    await page.setViewport({ width, height: 1000 });
-    const plan = await openPlan();
-    if (!plan.loaded) {
-      check(`Plan view loads at ${width}px (the server may need restarting)`, false);
-    } else {
-      check(`Plan view replaces the overview at ${width}px`, plan.overviewHidden && plan.panels >= 4);
-      check(`Plan view tables and panels fit without horizontal scrolling at ${width}px`, plan.tablesFit && plan.panelsFit);
-      check(`Plan view does not overflow the page at ${width}px`, plan.docWidth <= width + 1, `doc ${plan.docWidth}`);
+  for (const tab of ["outlook", "check", "inputs"]) {
+    for (const [width, suffix] of [[1728, ""], [1024, "-1024"], [850, "-850"]]) {
+      await page.setViewport({ width, height: 1000 });
+      const plan = await openPlan(tab);
+      const shot = `11-plan-${tab}${suffix}`;
+      if (!plan.loaded) {
+        check(`Plan view loads at ${width}px (the server may need restarting)`, false);
+      } else {
+        check(`Plan view (${tab}) replaces the overview at ${width}px`, plan.overviewHidden && plan.panels >= 1);
+        check(`Plan view (${tab}) tables and panels fit without horizontal scrolling at ${width}px`, plan.tablesFit && plan.panelsFit);
+        check(`Plan view (${tab}) does not overflow the page at ${width}px`, plan.docWidth <= width + 1, `doc ${plan.docWidth}`);
+      }
+      await shoot(shot);
+      await page.keyboard.press("Escape");
     }
-    await shoot(shot);
-    await page.keyboard.press("Escape");
   }
   await page.setViewport({ width: 850, height: 1000 });
 }

@@ -68,7 +68,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `CategoryCellEditor.tsx`: the inline category autocomplete.
 - **Full pages:**
   - `TriageView.tsx`
-  - `PlanView.tsx`: the Forecast page, with `ForecastVsReality.tsx` and `RecurringView.tsx` inside it.
+  - `PlanView.tsx`: the Forecast page: a summary strip, then three tabs (Outlook, Check, Inputs; the tab lives in `App.tsx` as `forecastTab`, and every panel stays mounted, hidden when not shown). Settings sections show a summary and open with Edit. It holds `ForecastVsReality.tsx` and `RecurringView.tsx`.
   - `RulesView.tsx`
   - `CategoriesView.tsx`
   - `AccountsView.tsx`: with `Imports.tsx`, and `Backups.tsx` below it.

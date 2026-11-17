@@ -17,7 +17,7 @@ import { RulesView } from "./RulesView";
 import { CategoriesView } from "./CategoriesView";
 import { TriageView } from "./TriageView";
 import { RecurringView } from "./RecurringView";
-import { PlanView } from "./PlanView";
+import { FORECAST_TABS, PlanView, type ForecastTab } from "./PlanView";
 import { forecastOnlyYears } from "./forecast";
 import {
   useBalanceHistory, useBudgets, useForecastVsActual, useReport, useTransactions, yearsOf,
@@ -49,6 +49,24 @@ const writeShowForecast = (shown: boolean) => {
     localStorage.setItem(SHOW_FORECAST_KEY, shown ? "on" : "off");
   } catch {
     // Not remembered in a private window; the switch still works for this page.
+  }
+};
+
+const FORECAST_TAB_KEY = "pfm.forecastTab";
+/** The remembered tab of the Forecast page; Outlook unless another was chosen. */
+const readForecastTab = (): ForecastTab => {
+  try {
+    const stored = localStorage.getItem(FORECAST_TAB_KEY);
+    return FORECAST_TABS.find((tab) => tab === stored) ?? "outlook";
+  } catch {
+    return "outlook";
+  }
+};
+const writeForecastTab = (tab: ForecastTab) => {
+  try {
+    localStorage.setItem(FORECAST_TAB_KEY, tab);
+  } catch {
+    // Not remembered in a private window.
   }
 };
 
@@ -100,6 +118,9 @@ export function App() {
   const [section, setSection] = useState<Section>("plan");
   /** Raised by N in the Forecast page's recurring payments and the Accounts page's backups. */
   const [recurringSignal, setRecurringSignal] = useState(0);
+  const [forecastTab, setForecastTab] = useState<ForecastTab>(readForecastTab);
+  /** Suggested recurring payments waiting for a decision, reported by the recurring list. */
+  const [recurringCandidates, setRecurringCandidates] = useState(0);
   const [backupSignal, setBackupSignal] = useState(0);
   const [rulesFilter, setRulesFilter] = useState("");
   const [newRuleText, setNewRuleText] = useState("");
@@ -296,6 +317,17 @@ export function App() {
     resetRulesContext();
     if (next === "forecast" || next === "accounts") setSection(next === "forecast" ? "plan" : "accounts");
     setView((current) => (current === next ? "overview" : next));
+  };
+  /** Shows a tab of the Forecast page; the arrow keys then act on the page, not on a list in a hidden tab. */
+  const changeForecastTab = (tab: ForecastTab) => {
+    setForecastTab(tab);
+    writeForecastTab(tab);
+    setSection("plan");
+  };
+  const moveForecastTab = (step: number) => {
+    const next = FORECAST_TABS[FORECAST_TABS.indexOf(forecastTab) + step];
+    if (!next) return false;
+    changeForecastTab(next);
   };
   /** Clicking in a two-part page makes that part the one N and the arrow keys act on. */
   const pickSection = (event: React.PointerEvent, inner: Section, outer: Section) =>
@@ -540,8 +572,8 @@ export function App() {
         s: toggleForecast,
       };
       const elsewhere: Record<string, () => boolean | void> = {
-        arrowleft: () => moveYear(-1),
-        arrowright: () => moveYear(1),
+        arrowleft: () => (view === "forecast" ? moveForecastTab(-1) : moveYear(-1)),
+        arrowright: () => (view === "forecast" ? moveForecastTab(1) : moveYear(1)),
         arrowdown: () => (transactions.length ? moveActiveTransaction(1, event.shiftKey) : false),
         arrowup: () => (transactions.length ? moveActiveTransaction(-1, event.shiftKey) : false),
         g: () => setShowBalanceHistory((visible) => !visible),
@@ -573,11 +605,15 @@ export function App() {
           if (view === "accounts" && section === "backups") setBackupSignal((signal) => signal + 1);
           else if (view === "accounts") chooseImportFiles();
           else if (view === "forecast" && section === "recurring") setRecurringSignal((signal) => signal + 1);
-          else setNewItemSignal((signal) => signal + 1);
+          else {
+            if (view === "forecast") changeForecastTab("inputs");
+            setNewItemSignal((signal) => signal + 1);
+          }
         },
       };
       // The full-page views replace the overview; only switching views, accounts and dialogs applies there.
-      if (view !== "overview" && !["t", "f", "c", "r", "a", "i", "e", "g", "k", "n", "s"].includes(key)) return;
+      const forecastTabKey = view === "forecast" && (key === "arrowleft" || key === "arrowright");
+      if (view !== "overview" && !forecastTabKey && !["t", "f", "c", "r", "a", "i", "e", "g", "k", "n", "s"].includes(key)) return;
       const action = anywhere[key] ?? elsewhere[key];
       if (action && action() !== false) event.preventDefault();
     };
@@ -712,7 +748,13 @@ export function App() {
             categories={categories}
             forecast={forecast}
             vsActual={vsActual}
-            onOpenRecurring={(id) => setRecurringTarget((target) => ({ id, nonce: (target?.nonce ?? 0) + 1 }))}
+            onOpenRecurring={(id) => {
+              changeForecastTab("inputs");
+              setRecurringTarget((target) => ({ id, nonce: (target?.nonce ?? 0) + 1 }));
+            }}
+            tab={forecastTab}
+            onTabChange={changeForecastTab}
+            recurringCandidates={recurringCandidates}
             onChanged={() => void reloadForecast()}
             onNotice={setNotice}
             onError={setError}
@@ -730,6 +772,7 @@ export function App() {
                   newItemSignal={recurringSignal}
                   active={section === "recurring"}
                   openRequest={recurringTarget}
+                  onCandidates={setRecurringCandidates}
                 />
               </div>
             )}

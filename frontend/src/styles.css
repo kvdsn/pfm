@@ -631,6 +631,30 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
   .plan-columns > .plan-panel { break-inside: avoid; margin: 0 0 16px; }
   .plan-view .plan-table td.truncate-cell { max-width: 360px; }
 }
+.plan-tab { display: grid; gap: 16px; }
+.plan-tab[hidden] { display: none; }
+.plan-stack { display: grid; gap: 16px; min-width: 0; }
+.plan-tabs .count { margin-left: 6px; }
+.plan-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.plan-tile { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--subtle); color: var(--ink); font: inherit; text-align: left; }
+button.plan-tile { cursor: pointer; }
+button.plan-tile:hover { border-color: var(--border-strong); background: var(--hover); }
+button.plan-tile:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.plan-tile-label { color: var(--muted); font-size: var(--text-xs); }
+.plan-tile-value { font-size: var(--text-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
+.plan-tile-value.negative { color: var(--red); }
+.plan-tile-value.positive { color: var(--green); }
+.plan-tile-note { color: var(--muted); font-size: var(--text-xs); }
+.plan-attention-list { display: grid; gap: 2px; margin: 2px 0 0; padding: 0; list-style: none; font-size: var(--text-xs); }
+.plan-settings-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.plan-settings-summary .plan-line { margin: 0; color: var(--ink-soft); }
+.plan-settings-summary .button { flex: none; min-height: 26px; padding: 0 10px; }
+@media (min-width: 1400px) {
+  /* Outlook in a narrow left column, the money plan and payout routes stacked on the right, tax and loan across below. */
+  .plan-outlook { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); align-items: start; }
+  .plan-outlook-solo { grid-template-columns: minmax(0, 1fr); }
+  .plan-outlook-wide { grid-column: 1 / -1; }
+}
 .tax-years { display: grid; gap: 16px; }
 @media (min-width: 1100px) { .tax-years { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tax-past td { color: var(--muted-light); }

@@ -67,7 +67,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.removeItem("pfm.forecastTab");
+});
 
 const press = (key: string) => fireEvent.keyDown(window, { key });
 const pressShiftM = () => fireEvent.keyDown(window, { key: "M", shiftKey: true });
@@ -144,6 +147,7 @@ describe("Forecast vs reality", () => {
   afterEach(() => localStorage.removeItem("pfm.showForecast"));
 
   it("shows the panel on the Forecast page, and its Amount changed hint opens that recurring payment", async () => {
+    localStorage.setItem("pfm.forecastTab", "check");
     await renderApp();
     press("f");
     const panel = await screen.findByRole("region", { name: "Forecast vs reality" });
@@ -152,10 +156,14 @@ describe("Forecast vs reality", () => {
     const row = (await screen.findByText("Fibre Co", { selector: "strong" })).closest("tr")!;
     await waitFor(() => expect(row).toHaveAttribute("aria-selected", "true"));
     expect(await screen.findByRole("complementary", { name: "Recurring payment details" })).toBeInTheDocument();
+    // The recurring list is on Inputs, which the hint switched to.
+    expect(screen.getByRole("tab", { name: /Inputs/ })).toHaveAttribute("aria-selected", "true");
+    expect(localStorage.getItem("pfm.forecastTab")).toBe("inputs");
   });
 
   it("asks for nothing and shows nothing when the Forecast switch is off", async () => {
     localStorage.setItem("pfm.showForecast", "off");
+    localStorage.setItem("pfm.forecastTab", "inputs");
     await renderApp();
     expect(requested.some((url) => url.startsWith("/api/forecast/vs-actual"))).toBe(false);
     press("f");
@@ -297,6 +305,7 @@ describe("Global keyboard shortcuts", () => {
       if (url.startsWith("/api/transactions")) return { total: 0, items: [] };
       return [];
     });
+    localStorage.setItem("pfm.forecastTab", "inputs");
     await renderApp();
     press("f");
     expect(screen.getByRole("button", { name: "Forecast" })).toHaveAttribute("aria-pressed", "true");
@@ -323,10 +332,12 @@ describe("Global keyboard shortcuts", () => {
     await renderApp();
     press("f");
     expect(screen.getByRole("button", { name: "Forecast" })).toHaveAttribute("aria-pressed", "true");
-    expect(await screen.findByRole("region", { name: "Planned items" })).toBeInTheDocument();
-    expect(await screen.findByRole("region", { name: "Recurring payments" })).toBeInTheDocument();
-    expect(screen.queryByRole("form", { name: "Add planned item" })).not.toBeInTheDocument();
+    // The page opens on Outlook; the planned items are on Inputs, which N switches to.
+    expect(await screen.findByRole("region", { name: "Planned items", hidden: true })).not.toBeVisible();
+    expect(screen.getByRole("tab", { name: /Outlook/ })).toHaveAttribute("aria-selected", "true");
     press("n");
+    expect(screen.getByRole("tab", { name: /Inputs/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("region", { name: "Recurring payments" })).toBeInTheDocument();
     expect(await screen.findByRole("form", { name: "Add planned item" })).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Add a recurring payment" })).not.toBeInTheDocument();
     fireEvent.pointerDown(screen.getByRole("region", { name: "Recurring payments" }));
@@ -334,7 +345,40 @@ describe("Global keyboard shortcuts", () => {
     expect(await screen.findByRole("complementary", { name: "Add a recurring payment" })).toBeInTheDocument();
     press("f");
     expect(screen.getByRole("button", { name: "Forecast" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.queryByRole("region", { name: "Planned items" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Planned items", hidden: true })).not.toBeInTheDocument();
+  });
+
+  it("on the Forecast page, the left and right arrows switch between Outlook, Check and Inputs, remembered", async () => {
+    apiMock.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/recurring")) {
+        return url.startsWith("/api/recurring/linkable") || url.startsWith("/api/recurring/groups")
+          ? []
+          : { monthly: { income: "0.00", expense: "0.00", net: "0.00" }, items: [], candidates: [], ignored: [] };
+      }
+      if (url.startsWith("/api/forecast/settings")) return planSettings;
+      if (url.startsWith("/api/forecast/salary")) return [];
+      if (url.startsWith("/api/planned")) return [];
+      if (url.startsWith("/api/report")) return { months: ["2026-03"], summaries: [summary] };
+      if (url.startsWith("/api/transactions")) return { total: 0, items: [] };
+      return [];
+    });
+    await renderApp();
+    press("f");
+    const selected = () => screen.getByRole("tab", { selected: true }).textContent;
+    expect(selected()).toMatch(/Outlook/);
+    press("ArrowRight");
+    expect(selected()).toMatch(/Check/);
+    press("ArrowRight");
+    expect(selected()).toMatch(/Inputs/);
+    press("ArrowRight");
+    expect(selected()).toMatch(/Inputs/);
+    expect(localStorage.getItem("pfm.forecastTab")).toBe("inputs");
+    press("ArrowLeft");
+    press("ArrowLeft");
+    expect(selected()).toMatch(/Outlook/);
+    // On the overview the same keys still move the year.
+    press("f");
+    expect(screen.queryByRole("tab", { name: /Outlook/ })).not.toBeInTheDocument();
   });
 
   it("offers next year as a forecast year when the forecast reaches it", async () => {

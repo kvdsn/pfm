@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PlanView } from "./PlanView";
+import { PlanView, type ForecastTab } from "./PlanView";
 import type { AccountType, Category, ConsultingCheck, CorporateTax, DayOff, DayRate, Forecast, ForecastSettings, PlannedItem, SalarySchedule } from "./types";
 
 const apiMock = vi.hoisted(() => vi.fn());
@@ -149,19 +150,26 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-const renderView = async (accountType: AccountType = "business") => {
+/** PlanView with the tab state App would keep. */
+function Harness({ initialTab, ...props }: Omit<React.ComponentProps<typeof PlanView>, "categories" | "forecast" | "tab" | "onTabChange"> & { initialTab: ForecastTab; forecast?: Forecast }) {
+  const [tab, setTab] = useState<ForecastTab>(initialTab);
+  return <PlanView categories={categories} forecast={forecast} tab={tab} onTabChange={setTab} {...props} />;
+}
+const renderView = async (accountType: AccountType = "business", tab: ForecastTab = "inputs", extra: Record<string, unknown> = {}) => {
   const props = { onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), onClose: vi.fn() };
-  render(<PlanView accountType={accountType} categories={categories} forecast={forecast} {...props} />);
-  await screen.findByRole("region", { name: "Baselines" });
-  if (accountType === "business") await screen.findByRole("table", { name: "Planned items" });
+  render(<Harness accountType={accountType} initialTab={tab} {...extra} {...props} />);
+  // Every tab stays mounted, so the Baselines panel is there even when it is hidden.
+  await screen.findByRole("region", { name: "Baselines", hidden: true });
+  if (accountType === "business") await screen.findByRole("table", { name: "Planned items", hidden: true });
   return props;
 };
+const edit = (name: string) => fireEvent.click(screen.getByRole("button", { name: `Edit ${name} settings` }));
 const calls = (method: string) => apiMock.mock.calls.filter(([, init]) => init?.method === method);
-const section = (name: string) => within(screen.getByRole("region", { name }));
+const section = (name: string) => within(screen.getByRole("region", { name, hidden: true }));
 
 describe("PlanView outlook", () => {
   it("lists the year ends, assumptions, short months and balance dates", async () => {
-    await renderView();
+    await renderView("business", "outlook");
     const outlook = section("Outlook");
     expect(outlook.getByText(/End of 2026/)).toHaveTextContent("€ 30.000,00");
     expect(outlook.getByText(/End of 2026/)).toHaveTextContent("€ 29.500,00 – € 31.800,00");
@@ -186,7 +194,7 @@ describe("PlanView outlook", () => {
 
 describe("PlanView ways to take money out", () => {
   it("lists the routes and the threshold note, only for Business", async () => {
-    await renderView();
+    await renderView("business", "outlook");
     const table = section("Ways to take money out").getByRole("table");
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(5);
@@ -198,17 +206,19 @@ describe("PlanView ways to take money out", () => {
     expect(rows[4]).toHaveTextContent("from 2027 to 2029");
     expect(rows[4]).toHaveTextContent("€ 10.000,00 gross");
     expect(section("Ways to take money out").getByText(/saves € 2.500,00 a year/)).toBeInTheDocument();
+    expect(section("Ways to take money out").getByText(/Social security contributions: 0%|Social security contributions/)).toBeInTheDocument();
+    edit("Ways to take money out");
     expect(section("Ways to take money out").getByLabelText("Social security contributions (%)")).toBeInTheDocument();
     cleanup();
-    await renderView("personal");
+    await renderView("personal", "outlook");
     expect(screen.queryByRole("region", { name: "Ways to take money out" })).not.toBeInTheDocument();
   });
 });
 
 describe("PlanView consulting payments", () => {
   it("lists the months newest first with their status tags and a summary", async () => {
-    await renderView();
-    const consultingSection = section("Consulting");
+    await renderView("business", "check");
+    const consultingSection = section("Consulting payments");
     expect(consultingSection.getByText("1 late, 1 differs, 1 VAT missing")).toBeInTheDocument();
     const rows = within(consultingSection.getByRole("table", { name: "Consulting payments" })).getAllByRole("row").slice(1);
     expect(rows[0]).toHaveTextContent("Aug 2026");
@@ -221,8 +231,8 @@ describe("PlanView consulting payments", () => {
 
   it("says all is well when nothing needs attention", async () => {
     consulting = { months: [], summary: { late: 0, differs: 0, fewer_days: 0, vat_missing: 0 } };
-    await renderView();
-    expect(section("Consulting").getByText("All payments as expected")).toBeInTheDocument();
+    await renderView("business", "check");
+    expect(section("Consulting payments").getByText("All payments as expected")).toBeInTheDocument();
     expect(section("Outlook").queryByText(/consulting payment/)).not.toBeInTheDocument();
   });
 
@@ -230,7 +240,7 @@ describe("PlanView consulting payments", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-26T12:00:00"));
     try {
-      await renderView();
+      await renderView("business", "outlook");
       expect(await section("Outlook").findByText("1 consulting payment late (Jul 2026)")).toBeInTheDocument();
       expect(section("Outlook").getByText("1 VAT payment missing (Aug 2026), or not imported yet")).toBeInTheDocument();
     } finally {
@@ -242,8 +252,8 @@ describe("PlanView consulting payments", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2027-02-01T12:00:00"));  // both fell due more than 60 days before
     try {
-      await renderView();
-      await section("Consulting").findByText("Payments");
+      await renderView("business", "check");
+      await section("Consulting payments").findByText("1 late, 1 differs, 1 VAT missing");
       expect(section("Outlook").queryByText(/consulting payment late/)).not.toBeInTheDocument();
       expect(section("Outlook").queryByText(/VAT payment missing/)).not.toBeInTheDocument();
     } finally {
@@ -310,7 +320,7 @@ describe("PlanView planned items", () => {
   it("opens the form when the new-item signal rises", async () => {
     const props = { onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), onClose: vi.fn() };
     const view = (signal: number) => (
-      <PlanView accountType="business" categories={categories} forecast={forecast} newItemSignal={signal} {...props} />
+      <PlanView accountType="business" categories={categories} forecast={forecast} tab="inputs" newItemSignal={signal} {...props} />
     );
     const { rerender } = render(view(0));
     await screen.findByRole("region", { name: "Planned items" });
@@ -345,6 +355,7 @@ describe("PlanView salary, consulting and settings", () => {
     await waitFor(() => expect(calls("PUT")).toHaveLength(1));
     expect(calls("PUT")[0][0]).toBe("/api/forecast/salary/2027");
     expect(calls("PUT")[0][1].json).toEqual({ monthly_amount: "4300", last_month: 12, minimum_amount: null });
+    edit("Salary");
     expect(section("Salary").getByText(/currently/)).toHaveTextContent("62.5%");
   });
 
@@ -379,6 +390,7 @@ describe("PlanView salary, consulting and settings", () => {
 
   it("saves only the settings that changed, and tells App to reload the forecast", async () => {
     const props = await renderView();
+    edit("Consulting");
     const consulting = section("Consulting");
     expect(consulting.getByRole("button", { name: "Save" })).toBeDisabled();
     fireEvent.change(consulting.getByLabelText("VAT rate (%)"), { target: { value: "6" } });
@@ -391,6 +403,7 @@ describe("PlanView salary, consulting and settings", () => {
 
   it("shows the server's message under the section's Save button", async () => {
     await renderView();
+    edit("Balances");
     const balances = section("Balances");
     fireEvent.change(balances.getByLabelText(/^Business buffer/), { target: { value: "abc" } });
     failure = "Invalid business buffer: abc";
@@ -401,6 +414,7 @@ describe("PlanView salary, consulting and settings", () => {
 
   it("saves the baseline settings and the closed categories of this entity", async () => {
     await renderView();
+    edit("Baselines");
     const baselines = section("Baselines");
     // The models' own categories never get a baseline, so they are not offered.
     expect(baselines.queryByLabelText("VAT")).not.toBeInTheDocument();
@@ -420,16 +434,17 @@ describe("PlanView salary, consulting and settings", () => {
   });
 
   it("lists the one-offs and the backtest", async () => {
-    await renderView();
-    const baselines = section("Baselines");
+    await renderView("business", "check");
+    const baselines = section("Backtest and one-offs");
     expect(baselines.getByRole("table", { name: "One-offs" })).toHaveTextContent("Tax office");
     expect(baselines.getByLabelText("Backtest")).toHaveTextContent("9 origins; recommended 12 months, weighted; p10 to p90 1 mo −€120 to €200");
   });
 
-  it("keeps the category roles collapsed until asked, then saves a changed role", async () => {
+  it("keeps the category roles closed until Edit, then saves a changed role", async () => {
     await renderView();
     expect(screen.queryByLabelText("VAT", { selector: "select" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /categories used by the models/ }));
+    expect(section("Categories used by the models").getByText("3 of 8 categories set")).toBeInTheDocument();
+    edit("model categories");
     const roles = section("Categories used by the models");
     fireEvent.change(roles.getByLabelText("Corporate tax"), { target: { value: "" } });
     fireEvent.click(roles.getByRole("button", { name: "Save" }));
@@ -440,7 +455,7 @@ describe("PlanView salary, consulting and settings", () => {
 
 describe("PlanView corporate tax", () => {
   it("shows the estimate, the deadlines and the surcharge, with the breakdown collapsed", async () => {
-    await renderView();
+    await renderView("business", "outlook");
     const tax = section("Corporate tax");
     const year = within(tax.getByRole("group", { name: "Corporate tax 2026" }));
     expect(year.getByText(/Reduced rate: salary € 52\.000,00 ≥ € 51\.000,00/)).toBeInTheDocument();
@@ -457,12 +472,13 @@ describe("PlanView corporate tax", () => {
   });
 
   it("is not shown for Personal", async () => {
-    await renderView("personal");
+    await renderView("personal", "outlook");
     expect(screen.queryByRole("region", { name: "Corporate tax" })).not.toBeInTheDocument();
   });
 
   it("saves the tax rules", async () => {
-    await renderView();
+    await renderView("business", "outlook");
+    edit("Corporate tax");
     const rules = section("Corporate tax");
     fireEvent.change(rules.getByLabelText(/Base rate for prepayments/), { target: { value: "3.5" } });
     fireEvent.click(rules.getByLabelText("The surcharge applies"));
@@ -473,7 +489,7 @@ describe("PlanView corporate tax", () => {
   });
 
   it("asks before replacing the planned items, then applies the advice", async () => {
-    await renderView();
+    await renderView("business", "outlook");
     const tax = section("Corporate tax");
     fireEvent.click(tax.getByRole("button", { name: "Use advice for 2026" }));
     const dialog = within(screen.getByRole("dialog"));
@@ -487,7 +503,7 @@ describe("PlanView corporate tax", () => {
   });
 
   it("cancels without applying", async () => {
-    await renderView();
+    await renderView("business", "outlook");
     fireEvent.click(section("Corporate tax").getByRole("button", { name: "Use advice for 2026" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -495,7 +511,8 @@ describe("PlanView corporate tax", () => {
   });
 
   it("sends the automatic interest setting from the loan rules", async () => {
-    await renderView();
+    await renderView("business", "outlook");
+    edit("Director loan");
     const loan = section("Director loan");
     fireEvent.click(loan.getByLabelText("Plan the interest automatically each 31 December"));
     fireEvent.click(loan.getByRole("button", { name: "Save" }));
@@ -504,9 +521,9 @@ describe("PlanView corporate tax", () => {
   });
 
   it("shows the director loan and saves only the changed loan rules", async () => {
-    await renderView();
+    await renderView("business", "outlook");
+    edit("Director loan");
     const loan = section("Director loan");
-    expect(loan.getByText("Loan rules")).toBeInTheDocument();
     fireEvent.change(loan.getByLabelText(/Interest rate/), { target: { value: "4" } });
     fireEvent.click(loan.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls("PUT")).toHaveLength(1));
@@ -514,9 +531,9 @@ describe("PlanView corporate tax", () => {
   });
 
   it("shows the director loan and saves only the changed loan rules", async () => {
-    await renderView();
+    await renderView("business", "outlook");
+    edit("Director loan");
     const loan = section("Director loan");
-    expect(loan.getByText("Loan rules")).toBeInTheDocument();
     fireEvent.change(loan.getByLabelText(/Interest rate/), { target: { value: "4" } });
     fireEvent.click(loan.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls("PUT")).toHaveLength(1));
@@ -526,7 +543,7 @@ describe("PlanView corporate tax", () => {
 
 describe("PlanView money plan", () => {
   it("shows a row per year with room in the negative style and dashes without a target", async () => {
-    await renderView();
+    await renderView("business", "outlook");
     const rows = within(screen.getByRole("table", { name: "Money plan" })).getAllByRole("row");
     expect(rows).toHaveLength(4);
     const first = within(rows[1]).getAllByRole("cell");
@@ -543,12 +560,13 @@ describe("PlanView money plan", () => {
   });
 
   it("is not shown for Personal", async () => {
-    await renderView("personal");
+    await renderView("personal", "outlook");
     expect(screen.queryByRole("region", { name: "Money plan" })).toBeNull();
   });
 
   it("saves the buffer targets, the fixed month cost and the withholding rate together", async () => {
-    await renderView();
+    await renderView("business", "outlook");
+    edit("Money plan");
     const money = section("Money plan");
     fireEvent.change(money.getByLabelText("Months of costs"), { target: { value: "4" } });
     fireEvent.click(money.getByRole("button", { name: "Add year" }));
@@ -566,7 +584,8 @@ describe("PlanView money plan", () => {
   });
 
   it("edits the reserves and sends them with the reserve settings", async () => {
-    await renderView();
+    await renderView("business", "outlook");
+    edit("Money plan");
     const money = section("Money plan");
     expect(money.getByLabelText("Label")).toHaveValue("Old");
     fireEvent.change(money.getByLabelText("Amount"), { target: { value: "12000" } });
@@ -588,6 +607,7 @@ describe("PlanView money plan", () => {
 
   it("sends the forecast end year from the baseline settings", async () => {
     await renderView();
+    edit("Baselines");
     const year = new Date().getFullYear() + 3;
     fireEvent.change(section("Baselines").getByLabelText("Forecast to"), { target: { value: String(year) } });
     fireEvent.click(section("Baselines").getByRole("button", { name: "Save" }));
@@ -598,9 +618,7 @@ describe("PlanView money plan", () => {
 
 describe("PlanView dividend purchases", () => {
   it("offers Paid by dividend for Personal only and sends it", async () => {
-    const props = { onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), onClose: vi.fn() };
-    render(<PlanView accountType="personal" categories={categories} forecast={forecast} {...props} />);
-    await screen.findByRole("region", { name: "Baselines" });
+    await renderView("personal");
     fireEvent.click(screen.getByRole("button", { name: "Add planned item" }));
     const form = within(screen.getByRole("form", { name: "Add planned item" }));
     fireEvent.change(form.getByLabelText("Date"), { target: { value: "2027-05-01" } });
@@ -631,5 +649,106 @@ describe("PlanView dividend purchases", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete planned item 2026-12-01" }));
     await waitFor(() => expect(calls("DELETE")).toHaveLength(1));
     confirm.mockRestore();
+  });
+});
+
+describe("PlanView tabs and summary", () => {
+  const withClosings = {
+    ...forecast,
+    months: [
+      { month: "2026-11", flags: ["transfer_short"], lines: [], closing: "12000.00" },
+      { month: "2026-12", flags: [], lines: [], closing: "8000.00" },
+      { month: "2027-01", flags: [], lines: [], closing: "20000.00" },
+    ],
+  } as unknown as Forecast;
+  const renderWith = async (props: Record<string, unknown> = {}, tab: ForecastTab = "outlook") => {
+    const rest = { onChanged: vi.fn(), onNotice: vi.fn(), onError: vi.fn(), onClose: vi.fn() };
+    render(<Harness accountType="business" initialTab={tab} forecast={withClosings} {...rest} {...props} />);
+    await screen.findByRole("region", { name: "Baselines", hidden: true });
+  };
+
+  it("shows each tab's panels and hides the others", async () => {
+    await renderWith();
+    expect(screen.getByRole("tab", { name: /Outlook/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Money plan" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Planned items" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Consulting payments" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Check/ }));
+    expect(screen.getByRole("region", { name: "Consulting payments" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Backtest and one-offs" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Money plan" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Inputs/ }));
+    for (const name of ["Planned items", "Salary", "Consulting", "Balances", "Baselines", "Categories used by the models"]) {
+      expect(screen.getByRole("region", { name })).toBeVisible();
+    }
+  });
+
+  it("summarizes the year end, the lowest month and the room above the buffer", async () => {
+    await renderWith({}, "check");
+    const summary = within(screen.getByRole("region", { name: "Forecast summary" }));
+    expect(summary.getByRole("button", { name: /End of 2026/ })).toHaveTextContent("€ 30.000,00");
+    expect(summary.getByRole("button", { name: /Lowest point/ })).toHaveTextContent("€ 8.000,00");
+    expect(summary.getByRole("button", { name: /Lowest point/ })).toHaveTextContent("Dec 2026");
+    expect(summary.getByRole("button", { name: /Room above the buffer/ })).toHaveTextContent("€ 18.000,00");
+    fireEvent.click(summary.getByRole("button", { name: /Room above the buffer/ }));
+    expect(screen.getByRole("tab", { name: /Outlook/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("hides the room tile for Personal and when the money plan has none", async () => {
+    await renderWith({ accountType: "personal" });
+    expect(screen.queryByRole("button", { name: /Room above the buffer/ })).not.toBeInTheDocument();
+  });
+
+  it("lists what needs attention and counts it on the tabs", async () => {
+    await renderWith({ recurringCandidates: 2 });
+    const attention = within(screen.getByLabelText("Needs attention"));
+    expect(attention.getByRole("button", { name: "1 month with a transfer short" })).toBeInTheDocument();
+    expect(attention.getByRole("button", { name: "2 suggested recurring payments to decide" })).toBeInTheDocument();
+    await waitFor(() => expect(attention.getByRole("button", { name: /consulting payments late, differing or without VAT/ })).toBeInTheDocument());
+    expect(screen.getByRole("tab", { name: /Outlook/ })).toHaveTextContent("1");
+    expect(screen.getByRole("tab", { name: /Check/ })).toHaveTextContent("3");
+    expect(screen.getByRole("tab", { name: /Inputs/ })).toHaveTextContent("2");
+    fireEvent.click(attention.getByRole("button", { name: "2 suggested recurring payments to decide" }));
+    expect(screen.getByRole("tab", { name: /Inputs/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("flags a balance more than 31 days old, and says Nothing when all is well", async () => {
+    consulting = { months: [], summary: { late: 0, differs: 0, fewer_days: 0, vat_missing: 0 } };
+    const stale = {
+      ...withClosings,
+      months: withClosings.months.map((month) => ({ ...month, flags: [] })),
+      accounts: [{ name: "KBC Business", balance: "9000.00", as_of: "2026-08-01" }],
+    } as unknown as Forecast;
+    await renderWith({ forecast: stale });
+    expect(within(screen.getByLabelText("Needs attention")).getByRole("button", { name: "1 balance more than 31 days old" })).toBeInTheDocument();
+    cleanup();
+    await renderWith({ forecast: { ...stale, accounts: [] } });
+    expect(within(screen.getByLabelText("Needs attention")).getByText("Nothing")).toBeInTheDocument();
+  });
+});
+
+describe("PlanView settings sections", () => {
+  it("shows a summary, opens with Edit, closes with Cancel and after Save", async () => {
+    const props = await renderView();
+    const balances = section("Balances");
+    expect(balances.getByText(/Personal minimum balance: € 2\.000,00/)).toBeInTheDocument();
+    expect(balances.getByText(/Reimbursement delay: 30 days/)).toBeInTheDocument();
+    expect(balances.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    edit("Balances");
+    fireEvent.change(balances.getByLabelText(/^Business buffer/), { target: { value: "3000" } });
+    fireEvent.click(balances.getByRole("button", { name: "Cancel" }));
+    expect(balances.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    edit("Balances");
+    expect(balances.getByLabelText(/^Business buffer/)).toHaveValue("2000.00");
+    fireEvent.change(balances.getByLabelText(/^Business buffer/), { target: { value: "3000" } });
+    fireEvent.click(balances.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls("PUT")).toHaveLength(1));
+    await waitFor(() => expect(balances.queryByRole("button", { name: "Save" })).not.toBeInTheDocument());
+    expect(props.onNotice).toHaveBeenCalledWith("Saved the settings.");
+  });
+
+  it("summarizes lists as counts", async () => {
+    await renderView();
+    expect(section("Baselines").getByText(/1 closed category · 0 yearly categories/)).toBeInTheDocument();
   });
 });

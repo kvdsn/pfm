@@ -304,7 +304,10 @@ export function RecurringView({
   newItemSignal = 0,
   active = true,
   openRequest = null,
+  onCandidates,
 }: {
+  /** Told how many suggested payments wait for a decision whenever the list loads or changes. */
+  onCandidates?: (count: number) => void;
   /** Asks to open one confirmed item (a null id only brings the list into view); a new nonce repeats the request. */
   openRequest?: { id: number | null; nonce: number } | null;
   /** Whether the arrow keys and Enter act on the list; off while the Forecast page's other sections are in use. */
@@ -346,6 +349,9 @@ export function RecurringView({
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (list) onCandidates?.(list.candidates.length);
+  }, [list, onCandidates]);
 
   const rows = useMemo(() => {
     const sections: { section: Section; item: RecurringItem }[] = [];

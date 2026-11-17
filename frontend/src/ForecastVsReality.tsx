@@ -21,13 +21,13 @@ const signedAmount = (value: string) => {
 /** Whether a difference is bad news: more spent, or less income. */
 const isBad = (difference: number, flow: "income" | "expense") => (flow === "expense" ? difference > 0 : difference < 0);
 
-function Hint({ miss, onOpenRecurring }: { miss: VsMiss; onOpenRecurring: (id: number | null) => void }) {
+function Hint({ miss, onOpenRecurring, onOpenSettings }: { miss: VsMiss; onOpenRecurring: (id: number | null) => void; onOpenSettings?: () => void }) {
   if (!miss.hint) return null;
   const text = HINT_LABELS[miss.hint];
   if (miss.hint === "one_off") return <span className="muted">{text}</span>;
   const open = miss.hint === "amount_changed" || miss.hint === "make_recurring"
     ? () => onOpenRecurring(miss.hint === "amount_changed" ? miss.recurring_id : null)
-    : () => document.querySelector('[aria-label="Baselines"]')?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    : onOpenSettings ?? (() => document.querySelector('[aria-label="Baselines"]')?.scrollIntoView?.({ block: "start", behavior: "smooth" }));
   const title = miss.hint === "amount_changed" ? "Open this payment in Recurring payments"
     : miss.hint === "make_recurring" ? "Open Recurring payments" : "Go to the Baselines settings";
   return <button className="vs-hint-link" title={title} onClick={open}>{text}</button>;
@@ -37,8 +37,11 @@ function Hint({ miss, onOpenRecurring }: { miss: VsMiss; onOpenRecurring: (id: n
 export function ForecastVsReality({
   vsActual,
   onOpenRecurring,
+  onOpenSettings,
 }: {
   vsActual: ForecastVsActual;
+  /** Brings the Baselines settings into view (they are on another tab). */
+  onOpenSettings?: () => void;
   /** Opens a confirmed recurring item, or only the Recurring section when the id is null. */
   onOpenRecurring: (id: number | null) => void;
 }) {
@@ -107,7 +110,7 @@ export function ForecastVsReality({
                       <td className="numeric">{money(miss.forecast)}</td>
                       <td className="numeric">{money(miss.actual)}</td>
                       <td className={`numeric vs-diff ${isBad(Number(miss.difference), miss.flow) ? "bad" : "good"}`}>{signedAmount(miss.difference)}</td>
-                      <td className="nowrap"><Hint miss={miss} onOpenRecurring={onOpenRecurring} /></td>
+                      <td className="nowrap"><Hint miss={miss} onOpenRecurring={onOpenRecurring} onOpenSettings={onOpenSettings} /></td>
                     </tr>
                   ))}
                 </tbody>

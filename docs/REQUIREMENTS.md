@@ -87,6 +87,12 @@ The forecast runs from the current month to December of next year, or of a later
 - **Baselines:** every other category's median of its last 6 complete months, leaving out recurring payments and one-offs above 3× its typical month. You can mark a category as closed to give it no baseline, or as yearly for lumpy costs such as travel: each month then repeats what that category cost in the same month over the last 12 complete months, with nothing left out as a one-off. A refund month becomes zero, and the other months are scaled so the year still adds up to its total.
 - **Range:** a rolling backtest gives the balance a low and high band.
 
+The Forecast page opens with a summary strip and has three tabs: **Outlook** (year ends, money plan, ways to take money out, corporate tax, director loan), **Check** (forecast vs reality, consulting payments, backtest and one-offs) and **Inputs** (recurring payments, planned items, reimbursements, salary, consulting, balances, baselines, model categories). The left and right arrows switch tabs, N opens the planned-item form on Inputs, and the tab is remembered.
+
+- **Summary:** the end of this year with its range, the lowest month-end closing and its month, the room above the buffer this year (Business), and what needs attention, each opening its panel.
+- **Needs attention:** months with a transfer short, consulting payments late, differing or without VAT, suggested recurring payments waiting for a decision, and a balance more than 31 days old. The tab holding each shows a count.
+- **Settings:** a section shows a one-line summary of its saved values and opens with Edit; Save closes it again, and Cancel drops the changes.
+
 The Forecast page also estimates these:
 
 - **Corporate tax:**

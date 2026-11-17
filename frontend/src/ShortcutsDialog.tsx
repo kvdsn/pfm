@@ -44,6 +44,7 @@ export const SHORTCUT_GROUPS: { title: string; shortcuts: [keys: string[], label
   {
     title: "Forecast view",
     shortcuts: [
+      [["←", "→"], "switch between Outlook, Check and Inputs"],
       [["N"], "add a planned item, or after a click in recurring payments, add a payment"],
       [["↑", "↓"], "move through recurring payments"],
       [["Enter"], "confirm the selected suggestion"],

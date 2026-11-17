@@ -72,7 +72,9 @@ The details are in [Categorization rules](docs/CATEGORIZATION_RULES.md).
 
 The year table and balance graph continue to the end of next year, or a later year you choose, with projected amounts in italics, and a range on the graph. The **Forecast** switch beside the title turns this on and off. Hover a projected cell to see where an amount comes from.
 
-The **Forecast** page holds what the projection is based on:
+The **Forecast** page starts with a summary: the end of this year, the lowest month-end balance, the room above the buffer (Business) and what needs attention. A tile opens the panel that explains it. Three tabs follow, remembered between visits and switched with the left and right arrows: **Outlook** (the answer), **Check** (forecast vs reality, past consulting payments, the backtest) and **Inputs** (what the projection is based on). Settings show a one-line summary until you press Edit.
+
+The panels are:
 
 - **Recurring payments:** subscriptions, loans and other payments found in your transactions. Confirm or ignore them, or add one by hand.
 - **Planned items:** one-off future income or expenses. A Personal purchase can be paid by dividend: Business pays the gross amount, Personal receives the net.
