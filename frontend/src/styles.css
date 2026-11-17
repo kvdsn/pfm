@@ -679,7 +679,14 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--amber-soft); color:
 .money-plan-table th { width: 10%; }
 .money-plan-table th:first-child { width: 8%; }
 @media (max-width: 900px) {
-  .money-plan-table th, .money-plan-table td { padding-inline: 2px; font-size: 12px; white-space: normal; }
+  .money-plan-table th, .money-plan-table td { padding-inline: 2px; font-size: var(--text-xs); white-space: normal; }
+}
+.payout-table th, .payout-table td { white-space: normal; }
+.plan-panel > .muted.small.payout-note { margin: 10px 0 14px; }
+.payout-table th:nth-child(2), .payout-table th:nth-child(3) { width: 12%; }
+.payout-table th:first-child { width: 28%; }
+@media (max-width: 900px) {
+  .payout-table th, .payout-table td { padding-inline: 2px; font-size: var(--text-xs); }
 }
 .plan-buffer { display: grid; gap: 8px; }
 .plan-buffer-row { display: flex; align-items: flex-end; gap: 8px; }

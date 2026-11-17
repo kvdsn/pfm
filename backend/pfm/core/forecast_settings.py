@@ -55,6 +55,12 @@ DEFAULTS: dict[str, Any] = {
     "reserve_tax_rate": 10,
     "reserve_wait_years": 3,
     "reserve_payout_rate": 6.5,
+    # The ways to take money out (percentages; the salary route is worked out from them).
+    "social_contribution_rate": 20.5,
+    "personal_tax_rate": 45,
+    "municipal_tax_rate": 7,
+    "professional_costs_rate": 3,
+    "reserve_early_rate": 20,
 }
 MAX_BUFFER_MONTHS = 120
 MONEY_SETTINGS = (
@@ -69,6 +75,11 @@ PERCENT_SETTINGS = {
     "reserve_share": ("Reserve share", 0, 100),
     "reserve_tax_rate": ("Reserve tax rate", 0, 100),
     "reserve_payout_rate": ("Reserve payout rate", 0, 100),
+    "social_contribution_rate": ("Social contribution rate", 0, 100),
+    "personal_tax_rate": ("Personal tax rate", 0, 100),
+    "municipal_tax_rate": ("Municipal tax rate", 0, 100),
+    "professional_costs_rate": ("Professional costs rate", 0, 100),
+    "reserve_early_rate": ("Early reserve payout rate", 0, 100),
 }
 WHOLE_RANGES = {
     "payment_delay_months": (0, 6),

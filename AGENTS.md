@@ -54,6 +54,7 @@ A local-only personal finance manager: it imports bank and card exports, categor
   - `core/forecast.py` also builds the shared `_projection(context)` (lines, assumptions, indexes, closings, flags): every caller (forecast, director loan, corporate tax, snapshots) uses it, never `_project` + `_balances` directly. With `loan_interest_auto` it solves the loan interest lines (source `loan_interest`) as a fixed point.
   - `core/forecast.py` also builds Business's `money_plan` (buffer target and room per year). The horizon is `forecast_end_year`.
   - `core/liquidation_reserve.py`: reserves formed and paid out (lines with source `reserve`, run after the later-year corporate tax); payouts are movements of the director loan (`loan_movements` in `core/director_loan.py`, shared with the money plan).
+  - `core/payout_routes.py`: the ways to take money out, compared per 1,000 net (`GET /api/forecast/payout-routes`).
   - `core/planned.py` (including purchases paid by dividend: three lines sharing `dividend_group`), `core/corporate_tax.py`, `core/director_loan.py` and `core/reimbursements.py`: the remaining models.
 
 **Frontend** (`frontend/src`):

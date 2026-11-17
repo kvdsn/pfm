@@ -79,6 +79,17 @@ let daysOff: DayOff[];
 let consulting: ConsultingCheck;
 let failure: string | null;
 let tax: CorporateTax;
+const payoutRoutes = {
+  year: "2027", corporate_rate: 25, wait_years: 3,
+  routes: [
+    { key: "salary", profit_per_1000: "2500.00", tax_share: 60, net_per_euro: 0.4 },
+    { key: "dividend", profit_per_1000: "1777.78", tax_share: 43.8, net_per_euro: 0.5625 },
+    { key: "reserve", profit_per_1000: "1568.63", tax_share: 36.3, net_per_euro: 0.6375 },
+    { key: "existing_reserves", profit_per_1000: "1500.00", tax_share: 33.3, net_per_euro: 0.66 },
+  ],
+  existing_reserves: { gross: "10000.00", earliest: "2027-01-01", latest: "2029-01-01" },
+  threshold: { salary: "51000.00", saving: "2500.00" },
+};
 
 beforeEach(() => {
   apiMock.mockReset();
@@ -128,6 +139,7 @@ beforeEach(() => {
     if (url === "/api/forecast/days-off") return daysOff;
     if (url === "/api/forecast/consulting") return consulting;
     if (url === "/api/forecast/corporate-tax") return tax;
+    if (url === "/api/forecast/payout-routes") return payoutRoutes;
     if (url === "/api/forecast/director-loan") return { start: "2026-01-01", rate: 3.5, balance: "0.00", interest_to_date: "0.00", interest_paid: "0.00", years: [], movements: [], payments: [], notes: [] };
     if (url === "/api/planned?account_type=business") return plannedItems;
     if (url.startsWith("/api/planned?account_type=")) return url.endsWith("personal") ? otherPlanned : [];
@@ -169,6 +181,27 @@ describe("PlanView outlook", () => {
       expect(screen.queryByRole("region", { name })).not.toBeInTheDocument();
     }
     expect(screen.getByRole("region", { name: "Baselines" })).toBeInTheDocument();
+  });
+});
+
+describe("PlanView ways to take money out", () => {
+  it("lists the routes and the threshold note, only for Business", async () => {
+    await renderView();
+    const table = section("Ways to take money out").getByRole("table");
+    const rows = within(table).getAllByRole("row");
+    expect(rows).toHaveLength(5);
+    expect(rows[1]).toHaveTextContent("Extra salary");
+    expect(rows[1]).toHaveTextContent("€ 2.500,00");
+    expect(rows[1]).toHaveTextContent("60.0%");
+    expect(rows[3]).toHaveTextContent("New reserve");
+    expect(rows[3]).toHaveTextContent("after 3 years");
+    expect(rows[4]).toHaveTextContent("from 2027 to 2029");
+    expect(rows[4]).toHaveTextContent("€ 10.000,00 gross");
+    expect(section("Ways to take money out").getByText(/saves € 2.500,00 a year/)).toBeInTheDocument();
+    expect(section("Ways to take money out").getByLabelText("Social security contributions (%)")).toBeInTheDocument();
+    cleanup();
+    await renderView("personal");
+    expect(screen.queryByRole("region", { name: "Ways to take money out" })).not.toBeInTheDocument();
   });
 });
 

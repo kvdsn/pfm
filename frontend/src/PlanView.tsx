@@ -9,6 +9,8 @@ import {
   type CorporateTax,
   type CorporateTaxYear,
   type DirectorLoan,
+  type PayoutRoute,
+  type PayoutRoutes,
   type DayOff,
   type DayRate,
   type Forecast,
@@ -55,6 +57,28 @@ const SALARY_SHARE = /Personal receives ([\d.]+)% of the salary/;
 const signClass = (amount: string) => (Number(amount) < 0 ? "negative" : "positive");
 const monthLabel = (key: string) =>
   new Date(`${key}-01T00:00:00Z`).toLocaleDateString(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
+
+/** The texts of a payout route: its label and when and how much can be taken. */
+function payoutText(route: PayoutRoute, payout: PayoutRoutes): { label: string; when: string; limit: string } {
+  const years = payout.wait_years ?? 0;
+  const existing = payout.existing_reserves;
+  switch (route.key) {
+    case "salary": return { label: "Extra salary", when: "right away", limit: "" };
+    case "dividend": return { label: "Dividend", when: "after the year's accounts", limit: "" };
+    case "reserve_early": return { label: "Reserve, paid out early", when: "any time", limit: "" };
+    case "reserve": return { label: "New reserve", when: `after ${years} ${years === 1 ? "year" : "years"}`, limit: "" };
+    case "existing_reserves":
+      return {
+        label: "Existing reserves",
+        when: existing ? `from ${existing.earliest.slice(0, 4)} to ${existing.latest.slice(0, 4)}` : "",
+        limit: existing ? `${money(existing.gross)} gross` : "",
+      };
+    case "loan_then_reserve":
+      return { label: "Director loan, repaid from a reserve", when: "right away", limit: "must be repaid; benefit-in-kind risk" };
+    case "winding_up": return { label: "When the company is wound up", when: "at the end", limit: "" };
+    default: return { label: route.key, when: "", limit: "" };
+  }
+}
 
 // --- Settings sections ----------------------------------------------------------------
 
@@ -583,6 +607,7 @@ export function PlanView({
   const [consulting, setConsulting] = useState<ConsultingCheck | null>(null);
   const [tax, setTax] = useState<CorporateTaxYear[] | null>(null);
   const [loan, setLoan] = useState<DirectorLoan | null>(null);
+  const [payout, setPayout] = useState<PayoutRoutes | null>(null);
   const [busy, setBusy] = useState(false);
   /** The inline message of each section that failed a change. */
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -598,7 +623,7 @@ export function PlanView({
   const load = useCallback(async () => {
     const others = ACCOUNT_TYPES.filter((kind) => kind !== accountType);
     try {
-      const [nextSettings, nextPlanned, otherPlanned, nextSalary, nextRates, nextOff, nextConsulting, nextTax, nextLoan] = await Promise.all([
+      const [nextSettings, nextPlanned, otherPlanned, nextSalary, nextRates, nextOff, nextConsulting, nextTax, nextLoan, nextPayout] = await Promise.all([
         api<ForecastSettings>("/api/forecast/settings"),
         api<PlannedItem[]>(`/api/planned?account_type=${accountType}`),
         Promise.all(others.map((kind) => api<PlannedItem[]>(`/api/planned?account_type=${kind}`))),
@@ -609,6 +634,7 @@ export function PlanView({
         isBusiness ? api<ConsultingCheck>("/api/forecast/consulting").catch(() => null) : Promise.resolve(null),
         isBusiness ? api<CorporateTax>("/api/forecast/corporate-tax").catch(() => null) : Promise.resolve(null),
         hasSalary ? api<DirectorLoan>("/api/forecast/director-loan").catch(() => null) : Promise.resolve(null),
+        isBusiness ? api<PayoutRoutes>("/api/forecast/payout-routes").catch(() => null) : Promise.resolve(null),
       ]);
       setSettings(nextSettings);
       setPlanned(nextPlanned);
@@ -619,6 +645,7 @@ export function PlanView({
       setConsulting(nextConsulting && Array.isArray(nextConsulting.months) ? nextConsulting : null);
       setTax(nextTax && Array.isArray(nextTax.years) ? nextTax.years : null);
       setLoan(nextLoan && Array.isArray(nextLoan.years) ? nextLoan : null);
+      setPayout(nextPayout && Array.isArray(nextPayout.routes) ? nextPayout : null);
     } catch (cause) {
       onError(errorMessage(cause, "Could not load the plan"));
     }
@@ -768,6 +795,13 @@ export function PlanView({
     { kind: "number", key: "reserve_wait_years", label: "Years to wait", help: "A reserve formed on the accounts of a year is payable from 1 January, this many years later plus one" },
     { kind: "number", key: "reserve_payout_rate", label: "Withholding on a new reserve's payout (%)" },
   ], []);
+  const payoutFields: Field[] = useMemo(() => [
+    { kind: "number", key: "social_contribution_rate", label: "Social security contributions (%)" },
+    { kind: "number", key: "personal_tax_rate", label: "Income tax, marginal (%)" },
+    { kind: "number", key: "municipal_tax_rate", label: "Municipal tax (%)", help: "A surcharge on the income tax" },
+    { kind: "number", key: "professional_costs_rate", label: "Flat professional costs (%)" },
+    { kind: "number", key: "reserve_early_rate", label: "Reserve paid out early (%)" },
+  ], []);
   const baselineFields: Field[] = useMemo(() => [
     { kind: "select", key: "forecast_end_year", label: "Forecast to", options: endYearOptions },
     { kind: "number", key: "baseline_months", label: "Months of history" },
@@ -875,6 +909,42 @@ export function PlanView({
             </div>
           ) : <p className="muted small">The money plan is not available.</p>}
           <SettingsSection fields={moneyPlanFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
+        </section>
+      )}
+
+      {isBusiness && settings && (
+        <section className="panel plan-panel" aria-label="Ways to take money out">
+          <h4 className="plan-heading">Ways to take money out</h4>
+          <p className="muted small">Per €1,000 net in your pocket: the company profit before corporate tax each route uses. An estimate from the settings; check it with your accountant.</p>
+          {payout && payout.routes.length > 0 ? (
+            <div className="table-scroll">
+              <table className="rules-table plan-table payout-table" aria-label="Ways to take money out">
+                <thead>
+                  <tr><th>Route</th><th className="numeric">Company profit</th><th className="numeric">Total tax</th><th>When</th><th>Limit</th></tr>
+                </thead>
+                <tbody>
+                  {payout.routes.map((route) => {
+                    const text = payoutText(route, payout);
+                    return (
+                      <tr key={route.key}>
+                        <td>{text.label}</td>
+                        <td className="numeric">{money(route.profit_per_1000)}</td>
+                        <td className="numeric">{route.tax_share.toFixed(1)}%</td>
+                        <td>{text.when}</td>
+                        <td>{text.limit}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="muted small">The routes are not available.</p>}
+          {payout?.threshold && (
+            <p className="muted small payout-note">
+              Salary up to {money(payout.threshold.salary)} a year keeps the reduced corporate rate, which saves {money(payout.threshold.saving)} a year in corporate tax, so that salary pays for itself.
+            </p>
+          )}
+          <SettingsSection fields={payoutFields} settings={settings} categories={categories} accountType={accountType} onSave={saveSettings} />
         </section>
       )}
 

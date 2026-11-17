@@ -184,6 +184,11 @@ class ForecastSettingsUpdate(BaseModel):
     reserve_tax_rate: Optional[float] = None
     reserve_wait_years: Optional[int] = None
     reserve_payout_rate: Optional[float] = None
+    social_contribution_rate: Optional[float] = None
+    personal_tax_rate: Optional[float] = None
+    municipal_tax_rate: Optional[float] = None
+    professional_costs_rate: Optional[float] = None
+    reserve_early_rate: Optional[float] = None
     closed_categories: Optional[dict[AccountType, list[int]]] = None
     yearly_categories: Optional[dict[AccountType, list[int]]] = None
     roles: Optional[dict[str, Optional[int]]] = None  # a null category clears the role
@@ -587,6 +592,10 @@ def create_app(database_path: Optional[Path] = None, frontend_dist: Path = FRONT
     def post_director_loan_interest(payload: LoanInterestCreate) -> dict[str, Any]:
         # No safety backup: adds planned rows only.
         return core.plan_loan_interest(database_path, payload.date, payload.amount, payload.note)
+
+    @app.get("/api/forecast/payout-routes")
+    def get_payout_routes() -> dict[str, Any]:
+        return core.payout_routes(database_path)
 
     @app.get("/api/forecast/settings")
     def get_forecast_settings() -> dict[str, Any]:

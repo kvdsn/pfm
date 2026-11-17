@@ -438,6 +438,11 @@ export type ForecastSettings = {
   reserve_tax_rate?: number;
   reserve_wait_years?: number;
   reserve_payout_rate?: number;
+  social_contribution_rate?: number;
+  personal_tax_rate?: number;
+  municipal_tax_rate?: number;
+  professional_costs_rate?: number;
+  reserve_early_rate?: number;
   roles: Record<ForecastRole, number | null>;
   closed_categories: Record<AccountType, number[]>;
   yearly_categories: Record<AccountType, number[]>;
@@ -630,4 +635,15 @@ export type ForecastVsActual = {
   };
   summary: { months_tracked: number; typical_balance_miss: string | null };
   misses: VsMiss[];
+};
+
+export type PayoutRoute = { key: string; profit_per_1000: string; tax_share: number; net_per_euro: number };
+/** The ways to take money out per 1,000 net; see GET /api/forecast/payout-routes. */
+export type PayoutRoutes = {
+  year?: string;
+  corporate_rate?: number;
+  wait_years?: number;
+  routes: PayoutRoute[];
+  existing_reserves?: { gross: string; earliest: string; latest: string } | null;
+  threshold?: { salary: string; saving: string } | null;
 };

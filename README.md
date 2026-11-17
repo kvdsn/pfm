@@ -80,6 +80,7 @@ The **Forecast** page holds what the projection is based on:
 - **Liquidation reserve:** the reserves already formed and a share of each year's profit, with the tax on forming them and the payouts that pay down the director loan.
 - **Salary** and **Entity transfers:** what Business pays Personal, keeping Personal above a minimum balance.
 - **Consulting:** income from days worked × day rate, the VAT on it, your days off, and a check of past payments.
+- **Ways to take money out:** for Business, the company profit each route (salary, dividend, reserves, director loan, winding up) needs per 1,000 net.
 - **Corporate tax:** an estimate with advised prepayments. It is an estimate, not tax advice.
 - **Director loan** and **reimbursements** between Business and Personal.
 - **Baselines:** each other category's usual month, from the median of recent months. A lumpy category, such as travel, can be marked yearly to repeat last year's months instead.

@@ -33,6 +33,7 @@ from .database import (
     restore_backup,
 )
 from .corporate_tax import apply_corporate_tax, corporate_tax
+from .payout_routes import payout_routes
 from .director_loan import director_loan, plan_loan_interest
 from .forecast import backtest, consulting_payments, forecast
 from .forecast_history import (
