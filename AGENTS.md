@@ -154,6 +154,12 @@ A local-only personal finance manager: it imports bank and card exports, categor
 
   Keep them short and about what users see. Feature plans go in `docs/plans/`. Keep this file's code map and invariants current.
 - **Shortcuts:** show keyboard shortcuts only in the Keyboard shortcuts dialog (K) and its single footer hint. Never add them to buttons, labels or tooltips.
+- **UI states and words:**
+  - **States:** every list, table or panel that loads data shows loading, empty and error, not only the filled state. An empty state says why it is empty and offers a way out (clear the search, the first action); an error is never shown as empty.
+  - **Errors** say what happened, why if known, and what to do next, next to what they concern. Never "Something went wrong" or "Invalid input", and never clear what the user typed.
+  - **Buttons** are a verb plus an object ("Save rule", "Import files"). A destructive confirm repeats the action and the object ("Delete 3 rules"), never "OK" or "Yes".
+  - **One name per idea** across the app: once it is a "statement", it is never also a "bill".
+  - **Contrast:** text is at least 4.5:1 against the backgrounds it sits on, in both themes, and meaning never comes from color alone. `--muted-light` is the faintest text color allowed; check a new token before using it for text.
 - **Layout:**
   - **Widths:** optimize for 1728px, the owner's width. The top bar is one row from 1680px, and full-page views should use the width. Tables must still fit at 1024px and 850px without horizontal scrolling.
   - **Checks:** after layout or styling changes, run `npm run layout-check`, review its screenshots in `frontend/layout-screenshots/`, and check the affected views in the browser pane. The user's screenshot review is part of done.
